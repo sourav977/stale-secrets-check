@@ -23,38 +23,31 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// SecretStoreRef refers to the SecretStore resource to watch for stale secrets.
-type SecretStoreRef struct {
-	// Name of the SecretStore resource.
-	Name string `json:"name"`
-
-	// Namespace of the SecretStore resource.
+// StaleSecretToWatch refers to the StaleSecretToWatch resource to watch for stale secrets.
+type StaleSecretToWatch struct {
+	// Namespace of the Secret resource. namespace=all or namespace=namespace1 or namespace=namespace1,namespace2 comma separated
 	Namespace string `json:"namespace"`
+	//exclude stale secret watch of below secrets present in namespace
+	ExcludeList ExcludeList `json:"excludeList,omitempty"`
+}
 
-	// Key within the SecretStore from which to monitor secrets.
-	Key string `json:"key,omitempty"`
-
-	// SecretType specifies the type or kind of secrets to watch (e.g., username/password, API key).
-	SecretType string `json:"secretType,omitempty"`
-
-	// Variable within the specified secret (if applicable).
-	Variable string `json:"variable,omitempty"`
-
-	ExcludeList ExcludeList `json:"excludeList"`
+// ExcludeList is to exclude secret watch
+type ExcludeList struct {
+	//name of the secret resource to exclude watch
+	SecretName string `json:"secretName"`
+	//namespace where secret resource resides
+	Namespace string `json:"namespace"`
 }
 
 // StaleSecretWatchCondition represents the current condition of the StaleSecretWatch.
 type StaleSecretWatchCondition struct {
-	// Type of the condition.
-	Type string `json:"type"`
-
 	// Status of the condition.
 	Status metav1.ConditionStatus `json:"status"`
 
-	// LastTransitionTime is the timestamp when the condition last transitioned.
-	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
+	// LastUpdateTime is the timestamp of the last status update.
+	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
 
-	// Reason is a brief reason for the condition's last transition.
+	// Reason is "StaleSecretsDetected"
 	Reason string `json:"reason,omitempty"`
 
 	// Message is a human-readable message indicating details about the condition's last transition.
@@ -69,17 +62,14 @@ type SecretStatus struct {
 	// Namespace of the secret being monitored.
 	Namespace string `json:"namespace,omitempty"`
 
-	// Key within the secret being monitored.
-	Key string `json:"key,omitempty"`
-
-	// Type or kind of the secret being monitored.
+	// Type or kind of the secret being monitored. Opaque dockerconfig etc
 	SecretType string `json:"secretType,omitempty"`
-
-	// Variable within the secret being monitored (if applicable).
-	Variable string `json:"variable,omitempty"`
 
 	// LastUpdateTime is the timestamp of the last update to the monitored secret.
 	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
+
+	// LastTransitionTime is the timestamp when the condition last transitioned.
+	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
 
 	// IsStale indicates whether the secret is stale or not.
 	IsStale bool `json:"isStale,omitempty"`
@@ -90,8 +80,8 @@ type StaleSecretWatchSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// SecretStoreRef points to the SecretStore to watch for stale secrets.
-	SecretStoreRef SecretStoreRef `json:"secretStoreRef"`
+	// StaleSecretToWatch points to the namespace and secret to watch for stale secrets.
+	StaleSecretToWatch StaleSecretToWatch `json:"StaleSecretToWatch"`
 
 	// StaleThreshold defines the threshold (in days) beyond which a secret is considered stale.
 	StaleThreshold int `json:"staleThresholdInDays"`
@@ -108,21 +98,13 @@ type StaleSecretWatchStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Conditions represent the current conditions of the StaleSecretWatch.
+	// Conditions represent the current conditions of the secret
 	Conditions []StaleSecretWatchCondition `json:"conditions,omitempty"`
 
-	// LastUpdateTime is the timestamp of the last status update.
-	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
-
 	// SecretStatus provides detailed information about the monitored secret's status.
-	SecretStatus SecretStatus `json:"secretStatus,omitempty"`
+	SecretStatus []SecretStatus `json:"secretStatus,omitempty"`
 
 	StaleSecretsCount int
-}
-
-type ExcludeList struct {
-	SecretName string `json:"secretName"`
-	Namespace  string `json:"namespace"`
 }
 
 //+kubebuilder:object:root=true

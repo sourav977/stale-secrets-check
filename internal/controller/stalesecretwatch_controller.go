@@ -124,10 +124,10 @@ func (r *StaleSecretWatchReconciler) listAndInspectSecrets(ctx context.Context, 
 	var secrets []corev1.Secret
 
 	// Check if the namespace is specified
-	if instance.Spec.SecretStoreRef.Namespace != "" && instance.Spec.SecretStoreRef.Namespace != "all" {
+	if instance.Spec.StaleSecretToWatch.Namespace != "" && instance.Spec.StaleSecretToWatch.Namespace != "all" {
 		// Namespace is specified, so list secrets only in that namespace
 		var secretListInNamespace corev1.SecretList
-		err := r.Client.List(ctx, &secretListInNamespace, client.InNamespace(instance.Spec.SecretStoreRef.Namespace))
+		err := r.Client.List(ctx, &secretListInNamespace, client.InNamespace(instance.Spec.StaleSecretToWatch.Namespace))
 		if err != nil {
 			return nil, err
 		}
@@ -144,13 +144,13 @@ func (r *StaleSecretWatchReconciler) listAndInspectSecrets(ctx context.Context, 
 
 	// Filter secrets based on the provided key, secret type, and variable
 	for _, secret := range secrets {
-		if instance.Spec.SecretStoreRef.Key != "" && secret.Data[instance.Spec.SecretStoreRef.Key] == nil {
+		if instance.Spec.StaleSecretToWatch.Key != "" && secret.Data[instance.Spec.StaleSecretToWatch.Key] == nil {
 			continue
 		}
-		if instance.Spec.SecretStoreRef.SecretType != "" && secret.Labels["type"] != instance.Spec.SecretStoreRef.SecretType {
+		if instance.Spec.StaleSecretToWatch.SecretType != "" && secret.Labels["type"] != instance.Spec.StaleSecretToWatch.SecretType {
 			continue
 		}
-		if instance.Spec.SecretStoreRef.Variable != "" && secret.Annotations["variable"] != instance.Spec.SecretStoreRef.Variable {
+		if instance.Spec.StaleSecretToWatch.Variable != "" && secret.Annotations["variable"] != instance.Spec.StaleSecretToWatch.Variable {
 			continue
 		}
 		secrets = append(secrets, secret)
@@ -189,17 +189,15 @@ func (r *StaleSecretWatchReconciler) updateStatus(ctx context.Context, instance 
 	// Update the status with the stale secrets count and other details
 	conditions := []stalesecretwatchv1.StaleSecretWatchCondition{
 		{
-			Type:               "StaleSecretsDetected",
-			Status:             metav1.ConditionTrue,
-			LastTransitionTime: metav1.Now(),
-			Reason:             "StaleSecretsFound",
-			Message:            fmt.Sprintf("Found %d stale secrets", len(staleSecrets)),
+			Status:         metav1.ConditionTrue,
+			Reason:         "StaleSecretsDetected",
+			LastUpdateTime: metav1.Now(),
+			Message:        fmt.Sprintf("Found %d stale secrets", len(staleSecrets)),
 		},
 	}
 
 	status := stalesecretwatchv1.StaleSecretWatchStatus{
 		Conditions:        conditions,
-		LastUpdateTime:    metav1.Now(),
 		StaleSecretsCount: len(staleSecrets),
 	}
 
