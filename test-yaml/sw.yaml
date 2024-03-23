@@ -1,0 +1,69 @@
+apiVersion: security.stalesecretwatch.io/v1beta1
+kind: StaleSecretWatch
+metadata:
+  labels:
+    app.kubernetes.io/name: stalesecretwatch
+    app.kubernetes.io/instance: stalesecretwatch-sample
+    app.kubernetes.io/part-of: stale-secrets-watch
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: stale-secrets-watch
+  name: stalesecretwatch-sample
+spec:
+  staleThresholdInDays: 90
+  refreshInterval: 24h
+  staleSecretToWatch:
+    namespace: all
+    excludeList:
+    - namespace: namespace1
+      secretName: secret1,secret2
+    - namespace: namespace2
+      secretName: secret3,secret4
+
+# no need of excludeList, it will watch all secrets present inside specified namespace only
+# spec:
+#   staleSecretToWatch:
+#     namespace: namespcae1, namespace2      
+
+status:
+  conditions:
+    - status: True/False/Unknown
+      lastUpdateTime: "2024-01-25T10:00:00Z"
+      message: Stale secret 'my-secret' detected.
+  secretStatus:
+    - name: my-secret
+      namespace: vivid
+      secretType: username-password
+      lastUpdateTime: "2024-01-25T10:04:00Z"
+      isStale: true
+      message: "this secret is stale, please rotate"
+
+
+data:
+  namespace1:
+    secret1:
+      hash1:
+        created: 2024-01-30T12:00:00Z
+        modified: 2024-01-31T09:30:00Z
+      hash2:
+        created: 2024-01-30T12:00:00Z
+        modified: 2024-01-31T09:30:00Z
+      hash3:
+        created: 2024-01-30T12:00:00Z
+        modified: 2024-01-31T09:30:00Z
+    secret2:
+      hash4:
+        created: 2024-01-28T08:45:00Z
+        modified: 2024-01-29T15:20:00Z
+  namespace2:
+    secret3:
+      hash5:
+        created: 2024-01-30T12:00:00Z
+        modified: 2024-01-31T09:30:00Z
+    secret4:
+      hash6:
+        created: 2024-01-28T08:45:00Z
+        modified: 2024-01-29T15:20:00Z
+      hash7:
+        created: 2024-01-28T08:45:00Z
+        modified: 2024-01-29T15:20:00Z
+      
