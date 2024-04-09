@@ -4,7 +4,7 @@
 progress_bar() {
     local duration=$1
     local elapsed=0
-    echo "waiting for $duration seconds==" 
+    echo "waiting for $duration seconds.." 
     while [ $elapsed -lt $duration ]; do
         # Calculate remaining time
         remaining=$((duration - elapsed))
@@ -32,7 +32,6 @@ make docker-build
 make install
 
 # Display progress bar while waiting
-echo "Waiting for 60 seconds..."
 progress_bar 60
 
 # Continuously check if cert-manager API is ready

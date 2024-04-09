@@ -15,3 +15,44 @@ after delete
 2024-04-01T17:25:27Z	INFO	StaleSecretWatch resource not found. Ignoring since StaleSecretWatch object must be deleted	{"controller": "stalesecretwatch", "controllerGroup": "security.stalesecretwatch.io", "controllerKind": "StaleSecretWatch", "StaleSecretWatch": {"name":"stalesecretwatch-sample"}, "namespace": "", "name": "stalesecretwatch-sample", "reconcileID": "3339bb35-9a9a-40a4-b418-f3bcf7c2c840", "stalesecretwatch": {"name":"stalesecretwatch-sample"}}
 
 2024-04-07T13:59:31Z	INFO	Monitoring namespaces and secrets	{"controller": "stalesecretwatch", "controllerGroup": "security.stalesecretwatch.io", "controllerKind": "StaleSecretWatch", "StaleSecretWatch": {"name":"stalesecretwatch-sample"}, "namespace": "", "name": "stalesecretwatch-sample", "reconcileID": "403ba3d5-4dbd-46fb-b530-54b8a42dc3c1", "stalesecretwatch": {"name":"stalesecretwatch-sample"}, "namespaces": ["cert-manager", "default", "kube-node-lease", "kube-public", "kube-system", "stale-secrets-watch-system", "vivid"], "secrets": {"cert-manager":["cert-manager-webhook-ca"],"kube-system":["chart-values-traefik","chart-values-traefik-crd","k3s-serving","lima-rancher-desktop.node-password.k3s","serving-ca"],"stale-secrets-watch-system":["webhook-server-cert"],"vivid":["chef-user-secret"]}}
+
+
+{
+    "namespace1": {
+        "secrets": {
+            "secret-name1": {
+                "version1": {
+                    "data": "hash1",
+                    "created": "UTC date",
+                    "modified": "UTC date"
+                },
+                "version2": {
+                    "data": "hash2",
+                    "created": "UTC date",
+                    "modified": "UTC date"
+                }
+            },
+            "secret-name2": {
+                "version1": {
+                    "data": "hash1",
+                    "created": "UTC date",
+                    "modified": "UTC date"
+                }
+            }
+        }
+    },
+    "namespace2": {
+        "secret-name1": {
+            "version1": {
+                "data": "hash1",
+                "created": "UTC date",
+                "modified": "UTC date"
+            }
+        }
+    }
+}
+
+
+kubectl events --for ssw/stalesecretwatch-sample --watch
+
+kubectl events --all-namespaces -w   
