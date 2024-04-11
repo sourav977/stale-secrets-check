@@ -18,18 +18,13 @@ package controller
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	securityv1beta1 "github.com/sourav977/stale-secrets-watch/api/v1beta1"
@@ -134,7 +130,18 @@ func (r *StaleSecretWatchReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			logger.Error(apierrors.FromObject(&staleSecretWatch), "Failed to add finalizer into the custom resource")
 			return ctrl.Result{Requeue: true}, nil
 		}
+		meta.SetStatusCondition(&staleSecretWatch.Status.Conditions, metav1.Condition{Type: typeAvailable, Status: metav1.ConditionTrue, Reason: "FinalizerAdded", Message: "Finalizer added to CR"})
+		// // Let's re-fetch the staleSecretWatch Custom Resource after update the status
+		// // so that we have the latest state of the resource on the cluster and we will avoid
+		// // raise the issue "the object has been modified, please apply
+		// // your changes to the latest version and try again" which would re-trigger the reconciliation
+		// found := securityv1beta1.StaleSecretWatch{}
+		// if err := r.Get(ctx, req.NamespacedName, &found); err != nil {
+		// 	logger.Error(err, "Failed to re-fetch staleSecretWatch")
+		// 	return ctrl.Result{}, err
+		// }
 
+		// now update the status again
 		if err := r.Update(ctx, &staleSecretWatch); err != nil {
 			logger.Error(err, "Failed to update custom resource to add finalizer")
 			return ctrl.Result{}, err
@@ -188,7 +195,7 @@ func (r *StaleSecretWatchReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			}
 
 			logger.Info("Removing Finalizer for staleSecretWatch after successfully perform the operations")
-			if ok := controllerutil.RemoveFinalizer(&staleSecretWatch, stalesecretwatchFinalizer); !ok {
+			if ok := controllerutil.RemoveFinalizer(&found, stalesecretwatchFinalizer); !ok {
 				logger.Error(apierrors.FromObject(&staleSecretWatch), "Failed to remove finalizer for staleSecretWatch")
 				return ctrl.Result{Requeue: true}, nil
 			}
@@ -198,25 +205,9 @@ func (r *StaleSecretWatchReconciler) Reconcile(ctx context.Context, req ctrl.Req
 				return ctrl.Result{}, err
 			}
 		}
+		r.Recorder.Event(&staleSecretWatch, "Normal", "Deleted", "custom resource "+staleSecretWatch.Name+" deleted")
 		return ctrl.Result{}, nil
 	}
-
-	// This will allow for the StaleSecretWatch to be reconciled when changes to the Secret are noticed.
-	// var secret corev1.Secret
-	// if err := controllerutil.SetControllerReference(&staleSecretWatch, &secret, r.Scheme); err != nil {
-	// 	return ctrl.Result{}, err
-	// }
-
-	// Validation passed, it must be validated by webhook, now create the StaleSecretWatch resource
-	// if err := r.createOrUpdateStaleSecretWatch(ctx, logger, &staleSecretWatch); err != nil {
-	// 	return ctrl.Result{}, err
-	// }
-
-	// meta.SetStatusCondition(&staleSecretWatch.Status.Conditions, metav1.Condition{Type: staleSecretWatch.Kind, Status: metav1.ConditionTrue, Reason: "Reconciled", Message: "StaleSecretWatch resource created"})
-	// if err := r.Status().Update(ctx, &staleSecretWatch); err != nil {
-	// 	logger.Error(err, "Failed to update StaleSecretWatch status")
-	// 	return ctrl.Result{}, err
-	// }
 
 	// Check if the ConfigMap already exists, if not create a new one
 	cm := &corev1.ConfigMap{}
@@ -226,33 +217,22 @@ func (r *StaleSecretWatchReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		scm, err := r.configMapForStaleSecretWatch(&staleSecretWatch)
 		if err != nil {
 			logger.Error(err, "Failed to define new ConfigMap resource for StaleSecretWatch")
-
-			// The following implementation will update the status
-			meta.SetStatusCondition(&staleSecretWatch.Status.Conditions, metav1.Condition{Type: typeAvailable,
-				Status: metav1.ConditionFalse, Reason: "Reconciling",
-				Message: fmt.Sprintf("Failed to create ConfigMap for the custom resource (%s): (%s)", staleSecretWatch.Name, err)})
-
-			if err := r.Status().Update(ctx, &staleSecretWatch); err != nil {
-				logger.Error(err, "Failed to update StaleSecretWatch status")
-				return ctrl.Result{}, err
-			}
-
 			return ctrl.Result{}, err
 		}
 
-		logger.Info("Creating a new ConfigMap",
-			"ConfigMap.Namespace", scm.Namespace, "ConfigMap.Name", scm.Name)
+		logger.Info("Creating a new ConfigMap", "ConfigMap.Namespace", scm.Namespace, "ConfigMap.Name", scm.Name)
 		if err = r.Create(ctx, scm); err != nil {
-			logger.Error(err, "Failed to create new ConfigMap",
-				"ConfigMap.Namespace", scm.Namespace, "ConfigMap.Name", scm.Name)
+			logger.Error(err, "Failed to create new ConfigMap", "ConfigMap.Namespace", scm.Namespace, "ConfigMap.Name", scm.Name)
 			return ctrl.Result{}, err
 		}
-		r.Recorder.Event(cm, "Normal", typeAvailable, "Configmap "+cm.Name+"created in default namespace")
+		r.Recorder.Event(scm, "Normal", typeAvailable, "Configmap "+scm.Name+" created in default namespace")
 
 		// ConfigMap created successfully
 		// We will requeue the reconciliation so that we can ensure the state
 		// and move forward for the next operations
-		return ctrl.Result{}, nil
+
+		//return ctrl.Result{}, nil
+		cm = scm.DeepCopy()
 	} else if err != nil {
 		logger.Error(err, "Failed to get ConfigMap")
 		// Let's return the error for the reconciliation be re-trigged again
@@ -273,7 +253,7 @@ func (r *StaleSecretWatchReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+	return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -286,6 +266,7 @@ func (r *StaleSecretWatchReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&securityv1beta1.StaleSecretWatch{}).
 		Owns(&corev1.ConfigMap{}, builder.OnlyMetadata).
+		Watches(&corev1.Secret{}, &handler.EnqueueRequestForObject{}).
 		Complete(r)
 }
 
@@ -297,15 +278,13 @@ func (r *StaleSecretWatchReconciler) doFinalizerOperationsForStaleSecretWatch(ss
 	// resources that are not owned by this CR, like a PVC.
 
 	// The following implementation will raise an event
-	r.Recorder.Event(ssw, "Warning", "Deleting",
-		fmt.Sprintf("Custom Resource %s is being deleted from the namespace %s",
-			ssw.Name,
-			ssw.Namespace))
+	r.Recorder.Event(ssw, "Warning", "Deleting", fmt.Sprintf("Custom Resource %s is being deleted from the namespace %s", ssw.Name, ssw.Namespace))
+
 }
 
-// deploymentForMemcached returns a Memcached Deployment object
+// configMapForStaleSecretWatch returns a stalesecretwatch ConfigMap object
 func (r *StaleSecretWatchReconciler) configMapForStaleSecretWatch(ssw *securityv1beta1.StaleSecretWatch) (*corev1.ConfigMap, error) {
-	ls := labelsForStaleSecretWatchConfigMap(ssw.Name)
+	ls := LabelsForStaleSecretWatchConfigMap(ssw.Name)
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "hashed-secrets-stalesecretwatch", // Name of the ConfigMap
@@ -314,41 +293,11 @@ func (r *StaleSecretWatchReconciler) configMapForStaleSecretWatch(ssw *securityv
 		},
 		Data: map[string]string{},
 	}
-	// Set the ownerRef for the Deployment
 	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/
 	if err := ctrl.SetControllerReference(ssw, cm, r.Scheme); err != nil {
 		return nil, err
 	}
 	return cm, nil
-}
-
-// labelsForMemcached returns the labels for selecting the resources
-// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
-func labelsForStaleSecretWatchConfigMap(name string) map[string]string {
-	return map[string]string{"app.kubernetes.io/name": "StaleSecretWatch",
-		"app.kubernetes.io/instance":   name,
-		"app.kubernetes.io/part-of":    "StaleSecretWatch-operator",
-		"app.kubernetes.io/created-by": "controller-manager-stalesecretwatch",
-	}
-}
-
-func calculateHash(data map[string][]byte) string {
-	hash := sha256.New()
-
-	// Sort the data map by key to ensure consistent hash calculation
-	var keys []string
-	for key := range data {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	// Append each key-value pair to the hash
-	for _, key := range keys {
-		hash.Write(data[key])
-	}
-
-	// Return the hexadecimal representation of the hash
-	return hex.EncodeToString(hash.Sum(nil))
 }
 
 func (r *StaleSecretWatchReconciler) calculateAndStoreHashedSecrets(ctx context.Context, secretsToWatch map[string][]string, cm *corev1.ConfigMap) error {
@@ -360,21 +309,23 @@ func (r *StaleSecretWatchReconciler) calculateAndStoreHashedSecrets(ctx context.
 		namespaceData := Namespace{
 			Secrets: make(map[string]Secret),
 		}
-		var count = 0
+		count := 0
 		for _, secretName := range secrets {
+			count = 0
 			secret, err := r.getSecret(ctx, namespace, secretName)
 			if err != nil {
 				return fmt.Errorf("failed to get secret %s in namespace %s: %v", secretName, namespace, err)
 			}
 			count++
 			// Calculate hash of secret data
-			hash := sha256.Sum256(secret.Data["data"])
+			hash := CalculateHash(secret.Data)
+			//dd := retrieveModifiedTime(secret.ObjectMeta)
 
 			// Construct Version struct
 			version := Version{
-				Data:     hex.EncodeToString(hash[:]),
+				Data:     hash,
 				Created:  secret.CreationTimestamp.Time.UTC().Format(time.RFC3339),
-				Modified: secret.ObjectMeta.GetCreationTimestamp().Time.UTC().Format(time.RFC3339),
+				Modified: RetrieveModifiedTime(secret.ObjectMeta),
 			}
 			key := "version" + strconv.Itoa(count)
 			// Construct Secret struct
@@ -393,7 +344,7 @@ func (r *StaleSecretWatchReconciler) calculateAndStoreHashedSecrets(ctx context.
 	}
 
 	// Encode ConfigData struct to JSON
-	jsonData, err := r.marshalConfigData(configData)
+	jsonData, err := MarshalConfigData(configData)
 	if err != nil {
 		return fmt.Errorf("failed to encode ConfigData to JSON: %v", err)
 	}
@@ -401,7 +352,7 @@ func (r *StaleSecretWatchReconciler) calculateAndStoreHashedSecrets(ctx context.
 	// Store JSON data in ConfigMap
 	cm.BinaryData = map[string][]byte{"data": jsonData}
 
-	// Create or update ConfigMap
+	//Create or update ConfigMap
 	if err := r.CreateOrUpdateConfigMap(ctx, cm); err != nil {
 		return fmt.Errorf("failed to create or update ConfigMap: %v", err)
 	}
@@ -418,18 +369,10 @@ func (r *StaleSecretWatchReconciler) getSecret(ctx context.Context, namespace, n
 	return secret, nil
 }
 
-func (r *StaleSecretWatchReconciler) marshalConfigData(configData ConfigData) ([]byte, error) {
-	jsonData, err := json.Marshal(configData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode ConfigData to JSON: %v", err)
-	}
-	return jsonData, nil
-}
-
 func (r *StaleSecretWatchReconciler) CreateOrUpdateConfigMap(ctx context.Context, cm *corev1.ConfigMap) error {
 	found := &corev1.ConfigMap{}
 	err := r.Get(ctx, types.NamespacedName{Name: cm.Name, Namespace: cm.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
+	if err != nil && apierrors.IsNotFound(err) {
 		// ConfigMap does not exist, create it
 		err = r.Create(ctx, cm)
 		if err != nil {
@@ -441,6 +384,7 @@ func (r *StaleSecretWatchReconciler) CreateOrUpdateConfigMap(ctx context.Context
 	}
 
 	// ConfigMap exists, update it
+	found = found.DeepCopy()
 	found.BinaryData = cm.BinaryData
 	err = r.Update(ctx, found)
 	if err != nil {
@@ -449,49 +393,6 @@ func (r *StaleSecretWatchReconciler) CreateOrUpdateConfigMap(ctx context.Context
 
 	return nil
 }
-
-// func (r *StaleSecretWatchReconciler) calculateAndStoreHashedSecrets(ctx context.Context, secrets []corev1.Secret) error {
-// 	// Iterate over each secret
-// 	for _, secret := range secrets {
-// 		// Calculate hash of secret data
-// 		hash := calculateHash(secret.Data)
-
-// 		// Create or update ConfigMap with hashed secret data
-// 		cm := &corev1.ConfigMap{
-// 			ObjectMeta: metav1.ObjectMeta{
-// 				Name:      "hashed-secrets-stalesecretwatch", // Name of the ConfigMap
-// 				Namespace: secret.Namespace,
-// 			},
-// 			Data: map[string]string{
-// 				secret.Name: hash,
-// 			},
-// 		}
-
-// 		// Check if ConfigMap exists
-// 		found := &corev1.ConfigMap{}
-// 		err := r.Get(ctx, client.ObjectKey{Namespace: cm.Namespace, Name: cm.Name}, found)
-// 		if err != nil {
-// 			if apierrors.IsNotFound(err) {
-// 				// ConfigMap does not exist, create it
-// 				err = r.Create(ctx, cm)
-// 				if err != nil {
-// 					return err
-// 				}
-// 			} else {
-// 				return err
-// 			}
-// 		} else {
-// 			// ConfigMap exists, update it
-// 			found.Data[secret.Name] = hash
-// 			err = r.Update(ctx, found)
-// 			if err != nil {
-// 				return err
-// 			}
-// 		}
-// 	}
-
-// 	return nil
-// }
 
 // func shouldRefresh(sw securityv1beta1.StaleSecretWatch) bool {
 // 	// refresh if resource version changed
@@ -507,21 +408,6 @@ func (r *StaleSecretWatchReconciler) CreateOrUpdateConfigMap(ctx context.Context
 // 		return true
 // 	}
 // 	return sw.Status.RefreshTime.Add(sw.Spec.RefreshInterval.Duration).Before(time.Now())
-// }
-
-// func getResourceVersion(sw securityv1beta1.StaleSecretWatch) string {
-// 	return fmt.Sprintf("%d-%s", sw.ObjectMeta.GetGeneration(), hashMeta(sw.ObjectMeta))
-// }
-
-// func hashMeta(m metav1.ObjectMeta) string {
-// 	type meta struct {
-// 		annotations map[string]string
-// 		labels      map[string]string
-// 	}
-// 	return utils.ObjectHash(meta{
-// 		annotations: m.Annotations,
-// 		labels:      m.Labels,
-// 	})
 // }
 
 // func shouldReconcile(sw securityv1beta1.StaleSecretWatch) bool {
@@ -571,7 +457,7 @@ func (r *StaleSecretWatchReconciler) prepareWatchList(ctx context.Context, logge
 			// Check if this secret is in the excludeList for its namespace
 			excluded := false
 			for _, excludeEntry := range ssw.Spec.StaleSecretToWatch.ExcludeList {
-				if excludeEntry.Namespace == ns && contains(excludeEntry.SecretName, secret.Name) {
+				if excludeEntry.Namespace == ns && Contains(excludeEntry.SecretName, secret.Name) {
 					excluded = true
 					break
 				}
@@ -581,18 +467,8 @@ func (r *StaleSecretWatchReconciler) prepareWatchList(ctx context.Context, logge
 			}
 		}
 	}
+	r.Recorder.Event(ssw, "Normal", "prepared list of secrets", "list of secrets present in different namespaces prepared for watch")
 
 	return secretsToWatch, nil
 
-}
-
-// contains checks if a comma-separated string contains a specific value.
-func contains(commaSeparatedString, value string) bool {
-	values := strings.Split(commaSeparatedString, ",")
-	for _, v := range values {
-		if strings.TrimSpace(v) == value {
-			return true
-		}
-	}
-	return false
 }
