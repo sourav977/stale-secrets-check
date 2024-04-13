@@ -1,19 +1,21 @@
 package controller
 
-type Version struct {
-	Data     string `json:"data"`
-	Created  string `json:"created"`
-	Modified string `json:"modified"`
+type History struct {
+	Data string `json:"data"`
 }
 
 type Secret struct {
-	Versions map[string]Version `json:"versions"`
+	Name         string    `json:"name"`
+	Created      string    `json:"created"`
+	LastModified string    `json:"last_modified"`
+	History      []History `json:"history"`
 }
 
 type Namespace struct {
-	Secrets map[string]Secret `json:"secrets"`
+	Name    string   `json:"name"`
+	Secrets []Secret `json:"secrets"`
 }
 
 type ConfigData struct {
-	Namespaces map[string]Namespace `json:"namespaces"`
+	Namespaces []Namespace `json:"namespaces"`
 }

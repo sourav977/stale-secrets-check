@@ -1,0 +1,120 @@
+{
+    "namespaces": [
+        {
+            "name": "kube-system",
+            "secrets": [
+                {
+                    "name": "chart-values-traefik",
+                    "last_modified": "2024-04-12T09:19:30Z",
+                    "created": "2024-04-11T11:01:16Z",
+                    "history": [
+                        {
+                            "data": "d20df341de4e2d1ce7200c0340afdb72f9bce78bb87e35604a1904e921d36b63"
+                        },
+                        {
+                            "data": "02d36b6334021afd20df341de4e2d1ce720bb87e356040cdb7f9bce78a1904e9"
+                        }
+                    ]
+                },
+                {
+                    "name": "chart-values-traefik-crd",
+                    "last_modified": "2024-04-11T11:01:16Z",
+                    "created": "2024-04-11T11:01:16Z",
+                    "history": [
+                        {
+                            "data": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                        }
+                    ]
+                },
+                {
+                    "name": "k3s-serving",
+                    "created": "2024-04-11T11:01:11Z",
+                    "last_modified": "2024-04-11T11:01:11Z",
+                    "history": [
+                        {
+                            "data": "8ceb357e39811df7a56e55355aa07a69b1c1b1eaf0a7a908422ee7d09030b749"
+                        }
+                    ]
+                },
+                {
+                    "name": "lima-rancher-desktop.node-password.k3s",
+                    "created": "2024-04-11T11:01:13Z",
+                    "last_modified": "2024-04-11T11:01:13Z",
+                    "history": [
+                        {
+                            "data": "1d1e1d45514ff1b4520114fbb18fb857090d22beacd35fe946dfb47ab35fdd0b"
+
+                        }
+                    ]
+                },
+                {
+                    "name": "serving-ca",
+                    "created": "2024-04-11T11:01:11Z",
+                    "last_modified": "2024-04-11T11:01:11Z",
+                    "history": [
+                        {
+                            "data": "5041fc91a467039c85b668a051b537abf2cac14b231393f18ca3c38e3bfb71d7"
+
+                        }
+                    ]
+                },
+                {
+                    "name": "serving-cert",
+                    "created": "2024-04-11T11:01:14Z",
+                    "last_modified": "2024-04-11T11:01:14Z",
+                    "history": [
+                        {
+                            "data": "14678391149da9dc1fce31c768c2fcb1c6169a23761b78d7f48fef7768168a1f"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "vivid",
+            "secrets": [
+                {
+                    "name": "chef-user-secret",
+                    "created": "2024-04-11T11:06:53Z",
+                    "last_modified": "2024-04-11T11:06:53Z",
+                    "history": [
+                        {
+                            "data": "d85d88fc09beef87ec306c9167d80dcef03752c4c0ab8a8e63620e827d670a84"
+
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "vivid2",
+            "secrets": [
+                {
+                    "name": "chef-user-secret2",
+                    "created": "2024-04-11T11:08:02Z",
+                    "last_modified": "2024-04-11T11:08:02Z",
+                    "history": [
+                        {
+                            "data": "96efbc43a462ab9d9c6a8173e5b322e17f218b56eb3a05a4bbc53221adebc7b3"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "vivid3",
+            "secrets": [
+                {
+                    "name": "chef-user-secret3",
+                    "created": "2024-04-11T17:19:04Z",
+                    "last_modified": "2024-04-11T18:09:12Z",
+                    "history": [
+                        {
+                            "data": "b30ffee89ff49f962b11ba2fd707872cd4d37a15548ae7552e6d4cff592d8771"
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
