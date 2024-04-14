@@ -212,6 +212,17 @@ func (r *StaleSecretWatchReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	if err := r.updateStatusCondition(ctx, &staleSecretWatch, "ReconcileComplete", metav1.ConditionTrue, "Success", "Reconciliation process completed successfully"); err != nil {
 		return ctrl.Result{}, err
 	}
+
+	// Check for daily tasks and possibly requeue
+	dailyDone, result, err := r.performDailyChecks(ctx, logger, &staleSecretWatch)
+	if err != nil {
+		return result, err
+	}
+	if dailyDone {
+		return result, nil
+	}
+
+	logger.Info("Regular reconciliation complete, requeue after 2 minutes")
 	return ctrl.Result{RequeueAfter: 2 * time.Minute}, nil
 }
 
@@ -256,6 +267,44 @@ func (r *StaleSecretWatchReconciler) updateStatusCondition(ctx context.Context, 
 		return err
 	}
 
+	return nil
+}
+
+func (r *StaleSecretWatchReconciler) updateSecretStatuses(logger logr.Logger, cm *corev1.ConfigMap, staleSecretWatch *securityv1beta1.StaleSecretWatch) error {
+	var configData ConfigData
+	var SecretStatus securityv1beta1.SecretStatus
+	if err := json.Unmarshal(cm.BinaryData["data"], &configData); err != nil {
+		logger.Error(err, "Failed to decode ConfigMap data")
+		return fmt.Errorf("failed to decode ConfigMap data: %v", err)
+	}
+
+	currentTime := time.Now().UTC()
+	// staleThreshold := staleSecretWatch.Spec.StaleThresholdInDays * 24 * time.Hour // convert days to hours
+	staleThreshold := time.Duration(staleSecretWatch.Spec.StaleThresholdInDays) * 24 * time.Hour
+
+	for _, namespace := range configData.Namespaces {
+		for _, secret := range namespace.Secrets {
+			created, err := ParseTime(secret.Created)
+			if err != nil {
+				return err
+			}
+			lastModifiedTime, err := ParseTime(secret.LastModified)
+			if err != nil {
+				return err
+			}
+			if currentTime.Sub(lastModifiedTime) > staleThreshold {
+				SecretStatus.Namespace = namespace.Name
+				SecretStatus.Name = secret.Name
+				SecretStatus.IsStale = true
+				SecretStatus.SecretType = secret.Type
+				SecretStatus.Created = metav1.Time{Time: created}
+				SecretStatus.LastModified = metav1.Time{Time: lastModifiedTime}
+				SecretStatus.Message = fmt.Sprintf("This secret is considered stale because it has not been modified/updated since %d days. ", staleSecretWatch.Spec.StaleThresholdInDays)
+				staleSecretWatch.Status.SecretStatus = append(staleSecretWatch.Status.SecretStatus, SecretStatus)
+				staleSecretWatch.Status.StaleSecretsCount++
+			}
+		}
+	}
 	return nil
 }
 
@@ -324,7 +373,7 @@ func (r *StaleSecretWatchReconciler) calculateAndStoreHashedSecrets(ctx context.
 				r.Recorder.Event(cm, "Normal", "SecretUpdated", fmt.Sprintf("Updated existing secret data: %s/%s", namespaceName, secretName))
 				updated = true
 			} else {
-				addSecretData(&configData, namespaceName, secretName, newHash, secret.CreationTimestamp.Time.UTC().Format(time.RFC3339), newLastModified)
+				addSecretData(&configData, namespaceName, secretName, newHash, secret.CreationTimestamp.Time.UTC().Format(time.RFC3339), newLastModified, string(secret.Type))
 				r.Recorder.Event(cm, "Normal", "SecretAdded", fmt.Sprintf("Added new secret data: %s/%s", namespaceName, secretName))
 				updated = true
 			}
@@ -385,12 +434,13 @@ func secretDataExists(configData *ConfigData, namespace, name string) *Secret {
 }
 
 // addSecretData adds new secret data hash to history
-func addSecretData(configData *ConfigData, namespace, name string, newHash, created, lastModified string) {
+func addSecretData(configData *ConfigData, namespace, name string, newHash, created, lastModified, secretType string) {
 	newSecret := Secret{
 		Name:         name,
 		Created:      created,
 		LastModified: lastModified,
 		History:      []History{{Data: newHash}},
+		Type:         secretType,
 	}
 
 	for i, ns := range configData.Namespaces {
@@ -489,4 +539,47 @@ func (r *StaleSecretWatchReconciler) prepareWatchList(ctx context.Context, logge
 
 	return secretsToWatch, nil
 
+}
+
+// performDailyChecks will handle the logic needed to perform the daily secret status updates and then schedule the next run
+func (r *StaleSecretWatchReconciler) performDailyChecks(ctx context.Context, logger logr.Logger, staleSecretWatch *securityv1beta1.StaleSecretWatch) (bool, ctrl.Result, error) {
+	currentTime := time.Now().UTC()
+
+	//if currentTime.Hour() == 9 && currentTime.Minute() < 30 { // Checking within a 30-minute window after 9 AM
+	if currentTime.Weekday() > 0 && currentTime.Weekday() < 6 {
+		cm := &corev1.ConfigMap{}
+		if err := r.Get(ctx, types.NamespacedName{Name: "hashed-secrets-stalesecretwatch", Namespace: "default"}, cm); err != nil {
+			logger.Error(err, "Failed to fetch the latest ConfigMap")
+			return true, ctrl.Result{}, err
+		}
+
+		if err := r.updateSecretStatuses(logger, cm, staleSecretWatch); err != nil {
+			logger.Error(err, "Failed to update secret statuses")
+			return true, ctrl.Result{}, err
+		}
+
+		if err := r.updateStatusCondition(ctx, staleSecretWatch, "StaleCheckPerformed", metav1.ConditionTrue, "Success", "Daily stale secret check performed successfully"); err != nil {
+			return true, ctrl.Result{}, err
+		}
+
+		if err := r.Status().Update(ctx, staleSecretWatch); err != nil {
+			logger.Error(err, "Failed to update StaleSecretWatch status")
+			return true, ctrl.Result{}, err
+		}
+		// statusJson, _ := json.Marshal(staleSecretWatch.Status.SecretStatus)
+		// message := fmt.Sprintf("Daily check completed successfully. \nStatus: %s\nStale Secrets Count: %d", string(statusJson), staleSecretWatch.Status.StaleSecretsCount)
+
+		if err := r.NotifySlack(ctx, logger, staleSecretWatch); err != nil {
+			logger.Error(err, "Failed to notify Slack")
+			return true, ctrl.Result{}, err
+		}
+
+		// requeueAfter := GetNextNineAMUTC()
+		requeueAfter := GetNextFiveMinutes()
+		logger.Info("Daily check performed, requeue scheduled", "RequeueAfter", requeueAfter)
+		return true, ctrl.Result{RequeueAfter: requeueAfter}, nil
+	}
+
+	// Indicate no requeue needed for daily checks, continue with other tasks
+	return false, ctrl.Result{}, nil
 }

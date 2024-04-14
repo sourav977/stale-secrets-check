@@ -64,8 +64,11 @@ type SecretStatus struct {
 	// Type or kind of the secret being monitored. Opaque dockerconfig etc
 	SecretType string `json:"secretType,omitempty"`
 
+	// Created is the timestamp of the secret created.
+	Created metav1.Time `json:"created,omitempty"`
+
 	// LastUpdateTime is the timestamp of the last update to the monitored secret.
-	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
+	LastModified metav1.Time `json:"last_modified,omitempty"`
 
 	// IsStale indicates whether the secret is stale or not.
 	IsStale bool `json:"isStale,omitempty"`

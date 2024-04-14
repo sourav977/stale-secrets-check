@@ -174,3 +174,65 @@ souravpatnaik@Souravs-MacBook-Pro stale-secrets-watch %                         
 
 
 ====ManagedFields====> [{Manager:kubectl-create Operation:Update APIVersion:v1 Time:2024-04-11 16:38:02 +0530 IST FieldsType:FieldsV1 FieldsV1:{"f:data":{".":{},"f:user-private-key":{}},"f:type":{}} Subresource:}]====ManagedFields====> [{Manager:kubectl-create Operation:Update APIVersion:v1 Time:2024-04-11 22:49:04 +0530 IST FieldsType:FieldsV1 FieldsV1:{"f:data":{".":{},"f:user-private-key":{}},"f:type":{}} Subresource:} {Manager:kubectl-edit Operation:Update APIVersion:v1 Time:2024-04-11 23:39:12 +0530 IST FieldsType:FieldsV1 FieldsV1:{"f:data":{"f:user":{}}} Subresource:}]====ManagedFields====> [{Manager:k3s-supervisor@lima-rancher-desktop Operation:Update APIVersion:v1 Time:2024-04-11 16:31:11 +0530 IST FieldsType:FieldsV1 FieldsV1:{"f:data":{".":{},"f:tls.crt":{},"f:tls.key":{}},"f:metadata":{"f:annotations":{".":{},"f:listener.cattle.io/cn-10.43.0.1":{},"f:listener.cattle.io/cn-127.0.0.1":{},"f:listener.cattle.io/cn-192.168.5.15":{},"f:listener.cattle.io/cn-__1-f16284":{},"f:listener.cattle.io/cn-kubernetes":{},"f:listener.cattle.io/cn-kubernetes.default":{},"f:listener.cattle.io/cn-kubernetes.default.svc":{},"f:listener.cattle.io/cn-kubernetes.default.svc.cluster.local":{},"f:listener.cattle.io/cn-lima-rancher-desktop":{},"f:listener.cattle.io/cn-localhost":{},"f:listener.cattle.io/fingerprint":{}}},"f:type":{}} Subresource:}]====ManagedFields====> [{Manager:k3s-supervisor@lima-rancher-desktop Operation:Update APIVersion:v1 Time:2024-04-11 16:31:13 +0530 IST FieldsType:FieldsV1 FieldsV1:{"f:data":{".":{},"f:hash":{}},"f:immutable":{},"f:type":{}} Subresource:}]====ManagedFields====> [{Manager:steve Operation:Update APIVersion:v1 Time:2024-04-11 16:31:11 +0530 IST FieldsType:FieldsV1 FieldsV1:{"f:data":{".":{},"f:tls.crt":{},"f:tls.key":{}},"f:type":{}} Subresource:}]====ManagedFields====> [{Manager:steve Operation:Update APIVersion:v1 Time:2024-04-11 16:31:14 +0530 IST FieldsType:FieldsV1 FieldsV1:{"f:data":{".":{},"f:tls.crt":{},"f:tls.key":{}},"f:metadata":{"f:annotations":{".":{},"f:listener.cattle.io/cn-127.0.0.1":{},"f:listener.cattle.io/hash":{}}},"f:type":{}} Subresource:}]====ManagedFields====> [{Manager:helm-controller@lima-rancher-desktop Operation:Update APIVersion:v1 Time:2024-04-11 16:31:16 +0530 IST FieldsType:FieldsV1 FieldsV1:{"f:data":{".":{},"f:values-01_HelmChart.yaml":{}},"f:metadata":{"f:annotations":{".":{},"f:objectset.rio.cattle.io/applied":{},"f:objectset.rio.cattle.io/id":{},"f:objectset.rio.cattle.io/owner-gvk":{},"f:objectset.rio.cattle.io/owner-name":{},"f:objectset.rio.cattle.io/owner-namespace":{}},"f:labels":{".":{},"f:objectset.rio.cattle.io/hash":{}}},"f:type":{}} Subresource:}]====ManagedFields====> [{Manager:helm-controller@lima-rancher-desktop Operation:Update APIVersion:v1 Time:2024-04-11 16:31:16 +0530 IST FieldsType:FieldsV1 FieldsV1:{"f:metadata":{"f:annotations":{".":{},"f:objectset.rio.cattle.io/applied":{},"f:objectset.rio.cattle.io/id":{},"f:objectset.rio.cattle.io/owner-gvk":{},"f:objectset.rio.cattle.io/owner-name":{},"f:objectset.rio.cattle.io/owner-namespace":{}},"f:labels":{".":{},"f:objectset.rio.cattle.io/hash":{}}},"f:type":{}} Subresource:}]====ManagedFields====> [{Manager:kubectl-create Operation:Update APIVersion:v1 Time:2024-04-11 16:36:53 +0530 IST FieldsType:FieldsV1 FieldsV1:{"f:data":{".":{},"f:user-private-key":{}},"f:type":{}} Subresource:}]
+
+
+_metadata:
+  major_version: 1
+  minor_version: 1
+display_information:
+  name: Stale-Secret-Watch Status
+  description: get notification about stale Kubernetes secret resources
+  background_color: "#d982b5"
+features:
+  bot_user:
+    display_name: StaleSecretWatch Status
+    always_online: true
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - chat:write.public
+      - app_mentions:read
+      - channels:history
+      - channels:join
+      - channels:manage
+      - channels:read
+      - chat:write.customize
+      - groups:history
+      - groups:read
+      - groups:write
+      - im:history
+      - im:read
+      - im:write
+      - links:read
+      - links:write
+      - mpim:history
+      - mpim:read
+      - mpim:write
+      - pins:read
+      - pins:write
+      - reactions:read
+      - reactions:write
+      - reminders:read
+      - reminders:write
+      - team:read
+      - usergroups:read
+      - usergroups:write
+      - users:read
+      - users:write
+      - users.profile:read
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+  interactivity:
+    is_enabled: true
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+
+
+
+
