@@ -62,7 +62,7 @@ const (
 )
 
 //+kubebuilder:rbac:groups=security.stalesecretwatch.io,resources=stalesecretwatches,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=security.stalesecretwatch.io,resources=stalesecretwatches/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=security.stalesecretwatch.io,resources=stalesecretwatches/status,verbs=get;patch;update
 //+kubebuilder:rbac:groups=security.stalesecretwatch.io,resources=stalesecretwatches/finalizers,verbs=update
 //+kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
@@ -272,7 +272,7 @@ func (r *StaleSecretWatchReconciler) updateStatusCondition(ctx context.Context, 
 
 func (r *StaleSecretWatchReconciler) updateSecretStatuses(logger logr.Logger, cm *corev1.ConfigMap, staleSecretWatch *securityv1beta1.StaleSecretWatch) error {
 	var configData ConfigData
-	var SecretStatus securityv1beta1.SecretStatus
+	//var SecretStatus securityv1beta1.SecretStatus
 	if err := json.Unmarshal(cm.BinaryData["data"], &configData); err != nil {
 		logger.Error(err, "Failed to decode ConfigMap data")
 		return fmt.Errorf("failed to decode ConfigMap data: %v", err)
@@ -292,19 +292,37 @@ func (r *StaleSecretWatchReconciler) updateSecretStatuses(logger logr.Logger, cm
 			if err != nil {
 				return err
 			}
-			if currentTime.Sub(lastModifiedTime) > staleThreshold {
-				SecretStatus.Namespace = namespace.Name
-				SecretStatus.Name = secret.Name
-				SecretStatus.IsStale = true
-				SecretStatus.SecretType = secret.Type
-				SecretStatus.Created = metav1.Time{Time: created}
-				SecretStatus.LastModified = metav1.Time{Time: lastModifiedTime}
-				SecretStatus.Message = fmt.Sprintf("This secret is considered stale because it has not been modified/updated since %d days. ", staleSecretWatch.Spec.StaleThresholdInDays)
-				staleSecretWatch.Status.SecretStatus = append(staleSecretWatch.Status.SecretStatus, SecretStatus)
+			fmt.Printf("current time======%v\n", currentTime)
+			fmt.Printf("lastModifiedTime time======%v\n", lastModifiedTime)
+			fmt.Printf("staleThreshold time======%v\n", staleThreshold)
+			fmt.Printf("currentTime.Sub(lastModifiedTime) time======%v\n", currentTime.Sub(lastModifiedTime))
+			//logger.Info("====time===", "current time", currentTime, "lastModifiedTime", lastModifiedTime, "staleThreshold", staleThreshold)
+			logger.Info("Time comparison details",
+				"currentTime", currentTime,
+				"lastModifiedTime", lastModifiedTime,
+				"timeSinceLastModified", currentTime.Sub(lastModifiedTime),
+				"staleThreshold", staleThreshold,
+				"conditionResult", currentTime.Sub(lastModifiedTime) > staleThreshold)
+			if currentTime.Sub(lastModifiedTime).Abs() > staleThreshold.Abs() {
+				fmt.Println("======inside loop======")
+				secretStatus := securityv1beta1.SecretStatus{
+					Namespace:    namespace.Name,
+					Name:         secret.Name,
+					IsStale:      true,
+					SecretType:   secret.Type,
+					Created:      metav1.Time{Time: created},
+					LastModified: metav1.Time{Time: lastModifiedTime},
+					Message:      fmt.Sprintf("This secret is considered stale because it has not been modified/updated in over %d days.", staleSecretWatch.Spec.StaleThresholdInDays),
+				}
+				staleSecretWatch.Status.SecretStatus = append(staleSecretWatch.Status.SecretStatus, secretStatus)
 				staleSecretWatch.Status.StaleSecretsCount++
+				fmt.Println("======appended======")
 			}
 		}
 	}
+	staleSecretWatch = staleSecretWatch.DeepCopy()
+	//staleSecretWatch = staleSecretWatch.DeepCopy()
+	fmt.Printf("======= staleSecretWatch.Status.SecretStatus ========%+v\n", staleSecretWatch.Status.SecretStatus)
 	return nil
 }
 
@@ -544,6 +562,12 @@ func (r *StaleSecretWatchReconciler) prepareWatchList(ctx context.Context, logge
 // performDailyChecks will handle the logic needed to perform the daily secret status updates and then schedule the next run
 func (r *StaleSecretWatchReconciler) performDailyChecks(ctx context.Context, logger logr.Logger, staleSecretWatch *securityv1beta1.StaleSecretWatch) (bool, ctrl.Result, error) {
 	currentTime := time.Now().UTC()
+	//currentTime.
+	//var latest securityv1beta1.StaleSecretWatch
+	// if err := r.Get(ctx, client.ObjectKey{Name: staleSecretWatch.Name, Namespace: staleSecretWatch.Namespace}, &latest); err != nil {
+	// 	logger.Error(err, "Failed to fetch the latest version of StaleSecretWatch")
+	// 	return true, ctrl.Result{}, err
+	// }
 
 	//if currentTime.Hour() == 9 && currentTime.Minute() < 30 { // Checking within a 30-minute window after 9 AM
 	if currentTime.Weekday() > 0 && currentTime.Weekday() < 6 {
@@ -557,21 +581,41 @@ func (r *StaleSecretWatchReconciler) performDailyChecks(ctx context.Context, log
 			logger.Error(err, "Failed to update secret statuses")
 			return true, ctrl.Result{}, err
 		}
+		newdata := staleSecretWatch.DeepCopy()
 
-		if err := r.updateStatusCondition(ctx, staleSecretWatch, "StaleCheckPerformed", metav1.ConditionTrue, "Success", "Daily stale secret check performed successfully"); err != nil {
+		// r.Recorder.Event(staleSecretWatch, "Normal", "StaleCheckPerformed", "Daily stale secret check performed successfully")
+		fmt.Printf("===== after updateSecretStatuses===== %+v\n", staleSecretWatch.Status.SecretStatus)
+		fmt.Printf("===== after updateSecretStatuses newdata ===== %+v\n", newdata.Status.SecretStatus)
+		// Update the status after modifying it
+		// if err := r.Update(ctx, staleSecretWatch); err != nil {
+		// 	logger.Error(err, "Failed to update StaleSecretWatch status")
+		// 	return true, ctrl.Result{}, err
+		// }
+		if err := r.Patch(ctx, staleSecretWatch, client.MergeFrom(staleSecretWatch)); err != nil {
+			logger.Error(err, "Failed to patch StaleSecretWatch status")
 			return true, ctrl.Result{}, err
 		}
 
-		if err := r.Status().Update(ctx, staleSecretWatch); err != nil {
-			logger.Error(err, "Failed to update StaleSecretWatch status")
+		// Refetch the resource to get the latest updates
+		if err := r.Get(ctx, client.ObjectKey{Name: staleSecretWatch.Name, Namespace: staleSecretWatch.Namespace}, staleSecretWatch); err != nil {
+			logger.Error(err, "Failed to fetch StaleSecretWatch after status update")
 			return true, ctrl.Result{}, err
 		}
+
+		fmt.Printf("===========after complete update SecretStatus===========\n%+v\n", staleSecretWatch.Status.SecretStatus)
+
+		logger.Info("Updated SecretStatus post-status update", "SecretStatus", staleSecretWatch.Status.SecretStatus)
+
 		// statusJson, _ := json.Marshal(staleSecretWatch.Status.SecretStatus)
 		// message := fmt.Sprintf("Daily check completed successfully. \nStatus: %s\nStale Secrets Count: %d", string(statusJson), staleSecretWatch.Status.StaleSecretsCount)
-
-		if err := r.NotifySlack(ctx, logger, staleSecretWatch); err != nil {
-			logger.Error(err, "Failed to notify Slack")
-			return true, ctrl.Result{}, err
+		fmt.Printf("=====before NotifySlack======\n%+v\n", staleSecretWatch.Status.SecretStatus)
+		if len(staleSecretWatch.Status.SecretStatus) > 0 {
+			if err := r.NotifySlack(ctx, logger, staleSecretWatch); err != nil {
+				logger.Error(err, "Failed to notify Slack")
+				return true, ctrl.Result{}, err
+			}
+		} else {
+			logger.Info("No Stale Secrets found. Enjoy.")
 		}
 
 		// requeueAfter := GetNextNineAMUTC()

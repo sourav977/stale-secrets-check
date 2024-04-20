@@ -1,0 +1,60 @@
+{
+    "channel": "C06UV9S4DC0",
+    "blocks": [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "*Daily check completed successfully.*\\n\\n"
+            }
+        },
+        {
+            "type": "divider"
+        },
+        {
+            "type": "rich_text",
+            "elements": [
+                {
+                    "type": "rich_text_section",
+                    "elements": [
+                        {
+                            "type": "emoji",
+                            "name": "warning"
+                        },
+                        {
+                            "type": "text",
+                            "text": "Stale Secret Detected !!!",
+                            "style": {
+                                "bold": true
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "rich_text",
+            "elements": [
+                {
+                    "type": "rich_text_section",
+                    "elements": [
+                        {
+                            "type": "text",
+                            "text": "Below is a list of secret resources where secret data has not been modified for 90 days in rancher-desktop Cluster!!",
+                            "style": {
+                                "bold": true
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": "\\n\\n"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "divider"
+        }
+    ]
+}

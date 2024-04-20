@@ -75,6 +75,8 @@ func (r *StaleSecretWatchReconciler) NotifySlack(ctx context.Context, logger log
 	if token == "" {
 		logger.Error(fmt.Errorf("SLACK_BOT_TOKEN is not set"), "Failed to get environment variable")
 	}
+	cluster_name := GetClusterName()
+	warningText := fmt.Sprintf("Below is a list of secret resources where secret data has not been modified for 90 days in %s Cluster!!", cluster_name)
 
 	// the fixed channel and initial blocks that are static as per your JSON structure
 	payload := SlackPayload{
@@ -117,7 +119,7 @@ func (r *StaleSecretWatchReconciler) NotifySlack(ctx context.Context, logger log
 						Elements: []Markup{
 							{
 								Type:  "text",
-								Text:  "Below are the list of Secret Resources where the secret data has not been modified since 90 days !!",
+								Text:  warningText,
 								Style: &Style{Bold: true},
 							},
 							{

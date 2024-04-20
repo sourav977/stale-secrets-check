@@ -17,7 +17,6 @@ limitations under the License.
 package v1beta1
 
 import (
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -38,19 +37,6 @@ type ExcludeList struct {
 	// name of the secret resource to exclude watch, comma separated or sinlge secretName example: secret1, secret2
 	//+kubebuilder:validation:Pattern:=`^[a-zA-Z0-9._-]+(?:,\s*[a-zA-Z0-9._-]+)*$`
 	SecretName string `json:"secretName"`
-}
-
-// StaleSecretWatchCondition represents the current condition of the StaleSecretWatch.
-type StaleSecretWatchCondition struct {
-	// Status of the condition.
-	Status corev1.ConditionStatus `json:"status"`
-
-	// LastUpdateTime is the timestamp of the last status update.
-	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
-
-	// Message is a human-readable message indicating details about the condition's last transition.
-	// like "StaleSecretsDetected" or "StaleSecretsNotDetected"
-	Message string `json:"message,omitempty"`
 }
 
 // SecretStatus provides detailed information about the monitored secret's status.
@@ -102,9 +88,11 @@ type StaleSecretWatchStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
 
 	// SecretStatus provides detailed information about the monitored secret's status.
-	SecretStatus []SecretStatus `json:"secretStatus,omitempty"`
+	// +operator-sdk:csv:customresourcedefinitions:type=status
+	SecretStatus []SecretStatus `json:"secretStatus,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=secretStatus"`
 
 	// StaleSecretsCount in the number of stale secret found
+	// +operator-sdk:csv:customresourcedefinitions:type=status
 	StaleSecretsCount int `json:"staleSecretCount,omitempty"`
 }
 
