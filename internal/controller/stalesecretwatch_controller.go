@@ -110,50 +110,13 @@ func (r *StaleSecretWatchReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	// Check if the instance is marked to be deleted
+	// this handles deletion and finalizers
 	if staleSecretWatch.GetDeletionTimestamp() != nil {
-		if controllerutil.ContainsFinalizer(&staleSecretWatch, stalesecretwatchFinalizer) {
-			logger.Info("Performing Finalizer Operations")
-			r.Recorder.Event(&staleSecretWatch, "Normal", "FinalizerOpsStarted", "Starting finalizer operations")
-			r.doFinalizerOperationsForStaleSecretWatch(&staleSecretWatch)
-			r.Recorder.Event(&staleSecretWatch, "Normal", "FinalizerOpsComplete", "Finalizer operations completed")
-			if err := r.updateStatusCondition(ctx, &staleSecretWatch, "FinalizerProcessing", metav1.ConditionTrue, "FinalizerStarted", "Performing finalizer operations before deleting resource"); err != nil {
-				return ctrl.Result{}, err
-			}
-
-			// Refetch latest before final removal of finalizer
-			if err := r.Get(ctx, req.NamespacedName, &staleSecretWatch); err != nil {
-				logger.Error(err, "Failed to fetch StaleSecretWatch before finalizer removal")
-				return ctrl.Result{}, err
-			}
-
-			logger.Info("Removing Finalizer for staleSecretWatch after successfully perform the operations")
-			controllerutil.RemoveFinalizer(&staleSecretWatch, stalesecretwatchFinalizer)
-			if err := r.Update(ctx, &staleSecretWatch); err != nil {
-				logger.Error(err, "Failed to remove finalizer")
-				r.Recorder.Event(&staleSecretWatch, "Warning", "FinalizerRemovalFailed", "Failed to remove finalizer")
-				return ctrl.Result{}, err
-			}
-			r.Recorder.Event(&staleSecretWatch, "Normal", "FinalizerRemoved", "Finalizer removed, resource cleanup complete"+"custom resource "+staleSecretWatch.Name+" deleted")
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, nil
+		return r.removeFinalizer(ctx, logger, &staleSecretWatch, &req)
 	}
 
 	// Add a finalizer if it does not exist
-	if !controllerutil.ContainsFinalizer(&staleSecretWatch, stalesecretwatchFinalizer) {
-		logger.Info("Adding Finalizer for staleSecretWatch")
-		controllerutil.AddFinalizer(&staleSecretWatch, stalesecretwatchFinalizer)
-		if err := r.Update(ctx, &staleSecretWatch); err != nil {
-			logger.Error(err, "Failed to add finalizer")
-			r.Recorder.Event(&staleSecretWatch, "Warning", "FinalizerAdditionFailed", "Failed to add finalizer")
-			return ctrl.Result{}, err
-		}
-		r.Recorder.Event(&staleSecretWatch, "Normal", "FinalizerAdded", "Finalizer added to CR successfully")
-		if err := r.updateStatusCondition(ctx, &staleSecretWatch, "FinalizerAdded", metav1.ConditionTrue, "FinalizerAdded", "Finalizer added successfully to StaleSecretWatch"); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{Requeue: true}, nil
-	}
+	r.addFinalizer(ctx, logger, &staleSecretWatch, &req)
 
 	// Check if the ConfigMap already exists, if not create a new one
 	cm := &corev1.ConfigMap{}
@@ -201,6 +164,7 @@ func (r *StaleSecretWatchReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		logger.Error(err, "Failed to refetch the ConfigMap")
 		return ctrl.Result{}, err
 	}
+
 	herr := r.calculateAndStoreHashedSecrets(ctx, logger, secretsToWatch, cm)
 	if herr != nil {
 		logger.Error(herr, "calculateAndStoreHashedSecrets error")
@@ -213,6 +177,7 @@ func (r *StaleSecretWatchReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
+	fmt.Printf("===== new new updateSecretStatuses===== %+v\n", staleSecretWatch.Status.SecretStatus)
 	// Check for daily tasks and possibly requeue
 	dailyDone, result, err := r.performDailyChecks(ctx, logger, &staleSecretWatch)
 	if err != nil {
@@ -224,6 +189,65 @@ func (r *StaleSecretWatchReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	logger.Info("Regular reconciliation complete, requeue after 2 minutes")
 	return ctrl.Result{RequeueAfter: 2 * time.Minute}, nil
+}
+
+// removeFinalizer handles deletion and finalizers
+func (r *StaleSecretWatchReconciler) removeFinalizer(ctx context.Context, logger logr.Logger, staleSecretWatch *securityv1beta1.StaleSecretWatch, req *ctrl.Request) (ctrl.Result, error) {
+	// Refetch latest before final removal of finalizer
+	if err := r.Get(ctx, req.NamespacedName, staleSecretWatch); err != nil {
+		logger.Error(err, "Failed to fetch StaleSecretWatch before finalizer removal")
+		return ctrl.Result{}, err
+	}
+	if controllerutil.ContainsFinalizer(staleSecretWatch, stalesecretwatchFinalizer) {
+		logger.Info("Performing Finalizer Operations")
+		r.Recorder.Event(staleSecretWatch, "Normal", "FinalizerOpsStarted", "Starting finalizer operations")
+		r.doFinalizerOperationsForStaleSecretWatch(staleSecretWatch)
+		r.Recorder.Event(staleSecretWatch, "Normal", "FinalizerOpsComplete", "Finalizer operations completed")
+		if err := r.updateStatusCondition(ctx, staleSecretWatch, "FinalizerProcessing", metav1.ConditionTrue, "FinalizerStarted", "Performing finalizer operations before deleting resource"); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// Refetch latest before final removal of finalizer
+		if err := r.Get(ctx, req.NamespacedName, staleSecretWatch); err != nil {
+			logger.Error(err, "Failed to fetch StaleSecretWatch before finalizer removal")
+			return ctrl.Result{}, err
+		}
+
+		logger.Info("Removing Finalizer for staleSecretWatch after successfully perform the operations")
+		controllerutil.RemoveFinalizer(staleSecretWatch, stalesecretwatchFinalizer)
+		if err := r.Update(ctx, staleSecretWatch); err != nil {
+			logger.Error(err, "Failed to remove finalizer")
+			r.Recorder.Event(staleSecretWatch, "Warning", "FinalizerRemovalFailed", "Failed to remove finalizer")
+			return ctrl.Result{}, err
+		}
+		r.Recorder.Event(staleSecretWatch, "Normal", "FinalizerRemoved", "Finalizer removed, resource cleanup complete"+"custom resource "+staleSecretWatch.Name+" deleted")
+		return ctrl.Result{}, nil
+	}
+	return ctrl.Result{}, nil
+}
+
+// addFinalizer handles adding finalizers
+func (r *StaleSecretWatchReconciler) addFinalizer(ctx context.Context, logger logr.Logger, staleSecretWatch *securityv1beta1.StaleSecretWatch, req *ctrl.Request) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(staleSecretWatch, stalesecretwatchFinalizer) {
+		logger.Info("Adding Finalizer for staleSecretWatch")
+		// Refetch latest before adding of finalizer
+		if err := r.Get(ctx, req.NamespacedName, staleSecretWatch); err != nil {
+			logger.Error(err, "Failed to fetch StaleSecretWatch before finalizer removal")
+			return ctrl.Result{}, err
+		}
+		controllerutil.AddFinalizer(staleSecretWatch, stalesecretwatchFinalizer)
+		if err := r.Update(ctx, staleSecretWatch); err != nil {
+			logger.Error(err, "Failed to add finalizer")
+			r.Recorder.Event(staleSecretWatch, "Warning", "FinalizerAdditionFailed", "Failed to add finalizer")
+			return ctrl.Result{}, err
+		}
+		r.Recorder.Event(staleSecretWatch, "Normal", "FinalizerAdded", "Finalizer added to CR successfully")
+		if err := r.updateStatusCondition(ctx, staleSecretWatch, "FinalizerAdded", metav1.ConditionTrue, "FinalizerAdded", "Finalizer added successfully to StaleSecretWatch"); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{Requeue: true}, nil
+	}
+	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -561,13 +585,8 @@ func (r *StaleSecretWatchReconciler) prepareWatchList(ctx context.Context, logge
 
 // performDailyChecks will handle the logic needed to perform the daily secret status updates and then schedule the next run
 func (r *StaleSecretWatchReconciler) performDailyChecks(ctx context.Context, logger logr.Logger, staleSecretWatch *securityv1beta1.StaleSecretWatch) (bool, ctrl.Result, error) {
+	logger.Info("Entering performDailyChecks ...")
 	currentTime := time.Now().UTC()
-	//currentTime.
-	//var latest securityv1beta1.StaleSecretWatch
-	// if err := r.Get(ctx, client.ObjectKey{Name: staleSecretWatch.Name, Namespace: staleSecretWatch.Namespace}, &latest); err != nil {
-	// 	logger.Error(err, "Failed to fetch the latest version of StaleSecretWatch")
-	// 	return true, ctrl.Result{}, err
-	// }
 
 	//if currentTime.Hour() == 9 && currentTime.Minute() < 30 { // Checking within a 30-minute window after 9 AM
 	if currentTime.Weekday() > 0 && currentTime.Weekday() < 6 {
@@ -622,6 +641,8 @@ func (r *StaleSecretWatchReconciler) performDailyChecks(ctx context.Context, log
 		requeueAfter := GetNextFiveMinutes()
 		logger.Info("Daily check performed, requeue scheduled", "RequeueAfter", requeueAfter)
 		return true, ctrl.Result{RequeueAfter: requeueAfter}, nil
+	} else {
+		logger.Info("It's the weekend. PerformDailyCheck will run over the coming weekdays.")
 	}
 
 	// Indicate no requeue needed for daily checks, continue with other tasks

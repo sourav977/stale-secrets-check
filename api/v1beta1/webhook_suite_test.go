@@ -130,3 +130,61 @@ var _ = AfterSuite(func() {
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })
+
+var _ = Describe("StaleSecretWatch Webhook", func() {
+	var (
+		staleSecretWatch *StaleSecretWatch
+		_                context.Context
+	)
+
+	BeforeEach(func() {
+		// Initialize each test with a fresh instance of StaleSecretWatch
+		staleSecretWatch = &StaleSecretWatch{
+			Spec: StaleSecretWatchSpec{
+				StaleThresholdInDays: 1,
+				StaleSecretToWatch: StaleSecretToWatch{
+					Namespace: "default",
+					ExcludeList: []ExcludeList{
+						{
+							Namespace:  "kube-system",
+							SecretName: "some-secret",
+						},
+					},
+				},
+			},
+		}
+		ctx = context.TODO()
+	})
+
+	Describe("Validating Create", func() {
+		It("should allow valid config", func() {
+			staleSecretWatch.Spec.StaleSecretToWatch.Namespace = "default"
+			warnings, err := staleSecretWatch.ValidateCreate()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(warnings).To(BeEmpty())
+		})
+
+		It("should reject invalid namespace", func() {
+			staleSecretWatch.Spec.StaleSecretToWatch.Namespace = ""
+			_, err := staleSecretWatch.ValidateCreate()
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Describe("Validating Update", func() {
+		It("should pass on valid changes", func() {
+			oldObject := staleSecretWatch.DeepCopy()
+			staleSecretWatch.Spec.StaleThresholdInDays = 2 // an example modification
+			_, err := staleSecretWatch.ValidateUpdate(oldObject)
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	Describe("Default Values", func() {
+		It("should set default namespace if not specified", func() {
+			staleSecretWatch.Namespace = ""
+			staleSecretWatch.Default()
+			Expect(staleSecretWatch.Namespace).To(Equal("default"))
+		})
+	})
+})
