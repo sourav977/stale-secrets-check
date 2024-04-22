@@ -8,7 +8,16 @@ This operator actively scans for such secrets and implements adaptive alerting t
 - Golang
 - A Kubernetes cluster (e.g., Docker, Lima, Kind, Rancher Desktop, Minikube, or any cloud Kubernetes cluster provider)
 - A Container runtime
+- Slack channel ID to send notification
+- Slack [Bot User OAuth Token](https://api.slack.com/authentication/token-types#bot)
+- Check out the [quickstart guide for creating a Slack app](https://api.slack.com/start/quickstart)
 
+Once you have Slack Channel ID and Bot User OAuth Token, update them in `config/manager/manager.yaml`
+
+```
+  SLACK_BOT_TOKEN: base64-encoded-token-here
+  SLACK_CHANNEL_ID: base64-encoded-channel-id-here
+```
 
 ## Installation and Running
 
@@ -48,6 +57,8 @@ kubectl delete -f https://github.com/cert-manager/cert-manager/releases/download
 4. **Run the Operator Locally**
 
 ```
+export SLACK_BOT_TOKEN=<slack bot token>
+export SLACK_CHANNEL_ID=<slack channel ID>
 make
 make crds.install
 make run
@@ -97,7 +108,27 @@ kubectl get secret chef-user-secret -n vivid -o jsonpath='{@}' | jq .
 kubectl get cm hashed-secrets-stalesecretwatch -o jsonpath='{.binaryData.data}' | base64 -d | jq .
 ```
 
-9. **Deletion**
+9. **Slack Notification**
+
+Sample Slack Notifications
+
+<details>
+<summary>Warning Message</summary>
+
+![warning_msg](/images/warning_msg.png)
+
+</details>
+
+<br>
+<details>
+<summary>Normal Message</summary>
+
+![normal_msg](/images/normal_msg.png)
+
+</details>
+<br>
+
+10. **Deletion**
 
 To delete a `StaleSecretWatch` resource and its associated configurations:
 
@@ -107,7 +138,7 @@ Run
 kubectl delete -f test-yaml/test-ssw.yaml
 ```
 
-10. **Remove crds**
+11. **Remove crds**
 
 Run
 

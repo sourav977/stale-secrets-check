@@ -69,107 +69,158 @@ type Divider struct {
 	Type string `json:"type"`
 }
 
-// func (r *StaleSecretWatchReconciler) NotifySlack(ctx context.Context, logger logr.Logger,  staleSecretWatch *securityv1beta1.StaleSecretWatch, staleSecretsCount *securityv1beta1.StaleSecretWatch.Status.StaleSecretsCount) error {
+// NotifySlack prepares Blocks to send msg over slack
 func (r *StaleSecretWatchReconciler) NotifySlack(ctx context.Context, logger logr.Logger, staleSecretWatch *securityv1beta1.StaleSecretWatch) error {
 	token := os.Getenv("SLACK_BOT_TOKEN")
-	if token == "" {
-		logger.Error(fmt.Errorf("SLACK_BOT_TOKEN is not set"), "Failed to get environment variable")
+	channelID := os.Getenv("SLACK_CHANNEL_ID")
+	if token == "" || channelID == "" {
+		return fmt.Errorf("SLACK_BOT_TOKEN or SLACK_CHANNEL_ID is not set")
 	}
-	cluster_name := GetClusterName()
-	warningText := fmt.Sprintf("Below is a list of secret resources where secret data has not been modified for 90 days in %s Cluster!!", cluster_name)
 
-	// the fixed channel and initial blocks that are static as per your JSON structure
-	payload := SlackPayload{
-		Channel: "C06UV9S4DC0", // slack-channel-ID
-		Blocks: []Block{
-			{
-				Type: "section",
-				Text: &TextElement{
-					Type: "mrkdwn",
-					Text: "*Daily check completed successfully.*\n\n",
-				},
-			},
-			{
-				Type: "divider",
-			},
-			{
-				Type: "rich_text",
+	clusterName := GetClusterName()
+	if len(staleSecretWatch.Status.SecretStatus) > 0 {
+		warningText := fmt.Sprintf("Below is a list of secret resources where secret data has not been modified for StaleThresholdInDays %d days in %s Cluster!! \n Total %d number of stale secrets found.\n", staleSecretWatch.Spec.StaleThresholdInDays, clusterName, staleSecretWatch.Status.StaleSecretsCount)
+		payload := prepareSlackMessage("warning", warningText, channelID, staleSecretWatch.Status.SecretStatus)
+		// Marshal the complete payload
+		payloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			logger.Error(err, "Failed to encode ConfigData to JSON")
+			return err
+		}
+		logger.Info("This Info will send to Slack", "payload", string(payloadBytes))
+		return sendSlackNotification(ctx, logger, payload, token)
+	} else {
+		successText := "All secrets are up to date. Good work!"
+		payload := prepareSlackMessage("success", successText, channelID, nil)
+		logger.Info(successText)
+		return sendSlackNotification(ctx, logger, payload, token)
+	}
+}
+
+// prepareSlackMessage prepares slack msg
+func prepareSlackMessage(msgType, text, channelID string, statuses []securityv1beta1.SecretStatus) SlackPayload {
+	var blocks []Block
+
+	// Initial common blocks
+	blocks = append(blocks, Block{
+		Type: "section",
+		Text: &TextElement{
+			Type: "mrkdwn",
+			Text: "*Daily check completed successfully.*\n\n",
+		},
+	}, Block{
+		Type: "divider",
+	})
+
+	if msgType == "warning" {
+		blocks = append(blocks, generateWarningBlock(text))
+		// Add secret details if present
+		for _, status := range statuses {
+			info := fmt.Sprintf("\"secret_name\": \"%s\",\n\"namespace\": \"%s\",\n\"type\": \"%s\",\n\"created\": \"%s\",\n\"last_modified\": \"%s\"",
+				status.Name, status.Namespace, status.SecretType, status.Created.Format("2006-01-02T15:04:05Z"), status.LastModified.Format("2006-01-02T15:04:05Z"))
+			blocks = append(blocks, Block{
+				Type: "rich_text_preformatted",
 				Elements: []Element{
 					{
-						Type: "rich_text_section",
+						Type:   "rich_text_preformatted",
+						Border: 1,
 						Elements: []Markup{
 							{
-								Type: "emoji",
-								Name: "warning",
-							},
-							{
-								Type:  "text",
-								Text:  "Stale Secret Detected !!!",
-								Style: &Style{Bold: true},
+								Type: "text",
+								Text: info,
 							},
 						},
 					},
 				},
+			})
+		}
+	} else {
+		blocks = append(blocks, generateSuccessBlock(text))
+	}
+
+	// Final divider
+	blocks = append(blocks, Block{Type: "divider"})
+
+	return SlackPayload{
+		//Channel: "C06UV9S4DC0", // Your Slack channel ID
+		Channel: channelID,
+		Blocks:  blocks,
+	}
+}
+
+// generateWarningBlock appends warning Block to main Block
+func generateWarningBlock(text string) Block {
+	return Block{
+		Type: "rich_text",
+		Elements: []Element{
+			{
+				Type: "rich_text_section",
+				Elements: []Markup{
+					{
+						Type: "emoji",
+						Name: "warning",
+					},
+					{
+						Type:  "text",
+						Text:  "Stale Secret Detected !!!",
+						Style: &Style{Bold: true},
+					},
+				},
 			},
 			{
-				Type: "rich_text",
-				Elements: []Element{
+				Type: "rich_text_section",
+				Elements: []Markup{
 					{
-						Type: "rich_text_section",
-						Elements: []Markup{
-							{
-								Type:  "text",
-								Text:  warningText,
-								Style: &Style{Bold: true},
-							},
-							{
-								Type: "text",
-								Text: "\n\n",
-							},
-						},
+						Type:  "text",
+						Text:  text,
+						Style: &Style{Bold: true},
+					},
+					{
+						Type: "text",
+						Text: "\n\n",
 					},
 				},
 			},
 		},
 	}
+}
 
-	// Dynamically add blocks for each secret status
-	for _, status := range staleSecretWatch.Status.SecretStatus {
-		info := fmt.Sprintf("\"secret_name\": \"%s\",\n\"namespace\": \"%s\",\n\"type\": \"%s\",\n\"created\": \"%s\",\n\"last_modified\": \"%s\"",
-			status.Name, status.Namespace, status.SecretType, status.Created.Format("2006-01-02T15:04:05Z"), status.LastModified.Format("2006-01-02T15:04:05Z"))
-
-		payload.Blocks = append(payload.Blocks, Block{
-			Type: "rich_text",
-			Elements: []Element{
-				{
-					Type:   "rich_text_preformatted",
-					Border: 1,
-					Elements: []Markup{
-						{
-							Type: "text",
-							Text: info,
-						},
+// generateSuccessBlock adds success Block to main Block
+func generateSuccessBlock(text string) Block {
+	return Block{
+		Type: "rich_text",
+		Elements: []Element{
+			{
+				Type: "rich_text_section",
+				Elements: []Markup{
+					{
+						Type: "emoji",
+						Name: "smiley",
+					},
+					{
+						Type:  "text",
+						Text:  text,
+						Style: &Style{Bold: true},
 					},
 				},
 			},
-		})
+		},
 	}
+}
 
-	// Final divider
-	payload.Blocks = append(payload.Blocks, Block{Type: "divider"})
-
-	// Marshal the complete payload
+// sendSlackNotification actually sends message to slack channel
+// using curl/http to send msg to slack rather using slack golang library
+func sendSlackNotification(ctx context.Context, logger logr.Logger, payload SlackPayload, token string) error {
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		logger.Error(err, "Failed to encode ConfigData to JSON")
 		return err
 	}
-	logger.Info("This Info will send to Slack", "payload", string(payloadBytes))
 
-	body := bytes.NewReader(payloadBytes)
-	req, err := http.NewRequest("POST", "https://slack.com/api/chat.postMessage", body)
+	logger.Info("This Info will send to Slack", "payload", string(payloadBytes))
+	reqBody := bytes.NewReader(payloadBytes)
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://slack.com/api/chat.postMessage", reqBody)
 	if err != nil {
-		logger.Error(err, "Error creating request")
 		return err
 	}
 
@@ -178,10 +229,8 @@ func (r *StaleSecretWatchReconciler) NotifySlack(ctx context.Context, logger log
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		logger.Info("Error sending request to Slack:", "error", err)
 		return err
 	}
-
 	defer resp.Body.Close()
 	logger.Info("Message sent to Slack successfully")
 	return nil

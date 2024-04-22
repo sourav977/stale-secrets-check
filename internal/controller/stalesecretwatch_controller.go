@@ -25,7 +25,6 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -165,6 +164,8 @@ func (r *StaleSecretWatchReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
+	// calculateAndStoreHashedSecrets will calculate the secret's data hash and will
+	// store in configmap
 	herr := r.calculateAndStoreHashedSecrets(ctx, logger, secretsToWatch, cm)
 	if herr != nil {
 		logger.Error(herr, "calculateAndStoreHashedSecrets error")
@@ -177,7 +178,6 @@ func (r *StaleSecretWatchReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
-	fmt.Printf("===== new new updateSecretStatuses===== %+v\n", staleSecretWatch.Status.SecretStatus)
 	// Check for daily tasks and possibly requeue
 	dailyDone, result, err := r.performDailyChecks(ctx, logger, &staleSecretWatch)
 	if err != nil {
@@ -193,34 +193,34 @@ func (r *StaleSecretWatchReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 // removeFinalizer handles deletion and finalizers
 func (r *StaleSecretWatchReconciler) removeFinalizer(ctx context.Context, logger logr.Logger, staleSecretWatch *securityv1beta1.StaleSecretWatch, req *ctrl.Request) (ctrl.Result, error) {
-	// Refetch latest before final removal of finalizer
-	if err := r.Get(ctx, req.NamespacedName, staleSecretWatch); err != nil {
-		logger.Error(err, "Failed to fetch StaleSecretWatch before finalizer removal")
-		return ctrl.Result{}, err
-	}
 	if controllerutil.ContainsFinalizer(staleSecretWatch, stalesecretwatchFinalizer) {
 		logger.Info("Performing Finalizer Operations")
-		r.Recorder.Event(staleSecretWatch, "Normal", "FinalizerOpsStarted", "Starting finalizer operations")
 		r.doFinalizerOperationsForStaleSecretWatch(staleSecretWatch)
 		r.Recorder.Event(staleSecretWatch, "Normal", "FinalizerOpsComplete", "Finalizer operations completed")
-		if err := r.updateStatusCondition(ctx, staleSecretWatch, "FinalizerProcessing", metav1.ConditionTrue, "FinalizerStarted", "Performing finalizer operations before deleting resource"); err != nil {
+
+		// Retry logic to handle conflicts
+		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			// Refetch the latest object to minimize the window for conflicts
+			if getErr := r.Get(ctx, req.NamespacedName, staleSecretWatch); getErr != nil {
+				logger.Error(getErr, "Failed to fetch StaleSecretWatch for finalizer removal")
+				return getErr
+			}
+
+			logger.Info("Removing Finalizer for staleSecretWatch after successfully perform the operations")
+			controllerutil.RemoveFinalizer(staleSecretWatch, stalesecretwatchFinalizer)
+			updateErr := r.Update(ctx, staleSecretWatch)
+			if updateErr != nil {
+				logger.Error(updateErr, "Failed to remove finalizer")
+				r.Recorder.Event(staleSecretWatch, "Warning", "FinalizerRemovalFailed", "Failed to remove finalizer")
+			}
+			return updateErr
+		})
+
+		if err != nil {
 			return ctrl.Result{}, err
 		}
 
-		// Refetch latest before final removal of finalizer
-		if err := r.Get(ctx, req.NamespacedName, staleSecretWatch); err != nil {
-			logger.Error(err, "Failed to fetch StaleSecretWatch before finalizer removal")
-			return ctrl.Result{}, err
-		}
-
-		logger.Info("Removing Finalizer for staleSecretWatch after successfully perform the operations")
-		controllerutil.RemoveFinalizer(staleSecretWatch, stalesecretwatchFinalizer)
-		if err := r.Update(ctx, staleSecretWatch); err != nil {
-			logger.Error(err, "Failed to remove finalizer")
-			r.Recorder.Event(staleSecretWatch, "Warning", "FinalizerRemovalFailed", "Failed to remove finalizer")
-			return ctrl.Result{}, err
-		}
-		r.Recorder.Event(staleSecretWatch, "Normal", "FinalizerRemoved", "Finalizer removed, resource cleanup complete"+"custom resource "+staleSecretWatch.Name+" deleted")
+		r.Recorder.Event(staleSecretWatch, "Normal", "FinalizerRemoved", "Finalizer removed, resource cleanup complete")
 		return ctrl.Result{}, nil
 	}
 	return ctrl.Result{}, nil
@@ -264,6 +264,7 @@ func (r *StaleSecretWatchReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
+// updateStatusCondition updates the status of staleSecretWatch resource
 func (r *StaleSecretWatchReconciler) updateStatusCondition(ctx context.Context, staleSecretWatch *securityv1beta1.StaleSecretWatch, conditionType string, status metav1.ConditionStatus, reason, message string) error {
 	updateFunc := func() error {
 		// Fetch the latest version of the resource
@@ -285,7 +286,7 @@ func (r *StaleSecretWatchReconciler) updateStatusCondition(ctx context.Context, 
 	}
 
 	// Attempt to update with a retry on conflict
-	err := retry.OnError(retry.DefaultRetry, errors.IsConflict, updateFunc)
+	err := retry.OnError(retry.DefaultRetry, apierrors.IsConflict, updateFunc)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update StaleSecretWatch status with retry")
 		return err
@@ -294,17 +295,16 @@ func (r *StaleSecretWatchReconciler) updateStatusCondition(ctx context.Context, 
 	return nil
 }
 
+// updateSecretStatuses updates SecretStatus struct
 func (r *StaleSecretWatchReconciler) updateSecretStatuses(logger logr.Logger, cm *corev1.ConfigMap, staleSecretWatch *securityv1beta1.StaleSecretWatch) error {
 	var configData ConfigData
-	//var SecretStatus securityv1beta1.SecretStatus
 	if err := json.Unmarshal(cm.BinaryData["data"], &configData); err != nil {
 		logger.Error(err, "Failed to decode ConfigMap data")
 		return fmt.Errorf("failed to decode ConfigMap data: %v", err)
 	}
 
 	currentTime := time.Now().UTC()
-	// staleThreshold := staleSecretWatch.Spec.StaleThresholdInDays * 24 * time.Hour // convert days to hours
-	staleThreshold := time.Duration(staleSecretWatch.Spec.StaleThresholdInDays) * 24 * time.Hour
+	staleThreshold := time.Duration(staleSecretWatch.Spec.StaleThresholdInDays) * 24 * time.Hour // convert days to hours
 
 	for _, namespace := range configData.Namespaces {
 		for _, secret := range namespace.Secrets {
@@ -316,19 +316,13 @@ func (r *StaleSecretWatchReconciler) updateSecretStatuses(logger logr.Logger, cm
 			if err != nil {
 				return err
 			}
-			fmt.Printf("current time======%v\n", currentTime)
-			fmt.Printf("lastModifiedTime time======%v\n", lastModifiedTime)
-			fmt.Printf("staleThreshold time======%v\n", staleThreshold)
-			fmt.Printf("currentTime.Sub(lastModifiedTime) time======%v\n", currentTime.Sub(lastModifiedTime))
-			//logger.Info("====time===", "current time", currentTime, "lastModifiedTime", lastModifiedTime, "staleThreshold", staleThreshold)
-			logger.Info("Time comparison details",
+			logger.Info("Time details",
 				"currentTime", currentTime,
 				"lastModifiedTime", lastModifiedTime,
 				"timeSinceLastModified", currentTime.Sub(lastModifiedTime),
 				"staleThreshold", staleThreshold,
 				"conditionResult", currentTime.Sub(lastModifiedTime) > staleThreshold)
 			if currentTime.Sub(lastModifiedTime).Abs() > staleThreshold.Abs() {
-				fmt.Println("======inside loop======")
 				secretStatus := securityv1beta1.SecretStatus{
 					Namespace:    namespace.Name,
 					Name:         secret.Name,
@@ -340,13 +334,9 @@ func (r *StaleSecretWatchReconciler) updateSecretStatuses(logger logr.Logger, cm
 				}
 				staleSecretWatch.Status.SecretStatus = append(staleSecretWatch.Status.SecretStatus, secretStatus)
 				staleSecretWatch.Status.StaleSecretsCount++
-				fmt.Println("======appended======")
 			}
 		}
 	}
-	staleSecretWatch = staleSecretWatch.DeepCopy()
-	//staleSecretWatch = staleSecretWatch.DeepCopy()
-	fmt.Printf("======= staleSecretWatch.Status.SecretStatus ========%+v\n", staleSecretWatch.Status.SecretStatus)
 	return nil
 }
 
@@ -589,7 +579,10 @@ func (r *StaleSecretWatchReconciler) performDailyChecks(ctx context.Context, log
 	currentTime := time.Now().UTC()
 
 	//if currentTime.Hour() == 9 && currentTime.Minute() < 30 { // Checking within a 30-minute window after 9 AM
-	if currentTime.Weekday() > 0 && currentTime.Weekday() < 6 {
+	//if currentTime.Weekday() > 0 && currentTime.Weekday() < 6 {
+	if currentTime.Hour() <= 8 {
+		staleSecretWatch.Status.SecretStatus = []securityv1beta1.SecretStatus{}
+		staleSecretWatch.Status.StaleSecretsCount = 0
 		cm := &corev1.ConfigMap{}
 		if err := r.Get(ctx, types.NamespacedName{Name: "hashed-secrets-stalesecretwatch", Namespace: "default"}, cm); err != nil {
 			logger.Error(err, "Failed to fetch the latest ConfigMap")
@@ -600,51 +593,52 @@ func (r *StaleSecretWatchReconciler) performDailyChecks(ctx context.Context, log
 			logger.Error(err, "Failed to update secret statuses")
 			return true, ctrl.Result{}, err
 		}
-		newdata := staleSecretWatch.DeepCopy()
 
-		// r.Recorder.Event(staleSecretWatch, "Normal", "StaleCheckPerformed", "Daily stale secret check performed successfully")
-		fmt.Printf("===== after updateSecretStatuses===== %+v\n", staleSecretWatch.Status.SecretStatus)
-		fmt.Printf("===== after updateSecretStatuses newdata ===== %+v\n", newdata.Status.SecretStatus)
-		// Update the status after modifying it
-		// if err := r.Update(ctx, staleSecretWatch); err != nil {
-		// 	logger.Error(err, "Failed to update StaleSecretWatch status")
-		// 	return true, ctrl.Result{}, err
-		// }
-		if err := r.Patch(ctx, staleSecretWatch, client.MergeFrom(staleSecretWatch)); err != nil {
-			logger.Error(err, "Failed to patch StaleSecretWatch status")
+		if err := r.NotifySlack(ctx, logger, staleSecretWatch); err != nil {
+			logger.Error(err, "Failed to notify Slack")
 			return true, ctrl.Result{}, err
 		}
 
-		// Refetch the resource to get the latest updates
-		if err := r.Get(ctx, client.ObjectKey{Name: staleSecretWatch.Name, Namespace: staleSecretWatch.Namespace}, staleSecretWatch); err != nil {
-			logger.Error(err, "Failed to fetch StaleSecretWatch after status update")
+		// Fetch the latest version to avoid update conflicts
+		latest := &securityv1beta1.StaleSecretWatch{}
+		if err := r.Get(ctx, types.NamespacedName{Name: staleSecretWatch.Name, Namespace: staleSecretWatch.Namespace}, latest); err != nil {
+			logger.Error(err, "Failed to refetch StaleSecretWatch")
 			return true, ctrl.Result{}, err
 		}
 
-		fmt.Printf("===========after complete update SecretStatus===========\n%+v\n", staleSecretWatch.Status.SecretStatus)
+		// Apply the updates from staleSecretWatch to the latest fetched version
+		latest.Status.SecretStatus = staleSecretWatch.Status.SecretStatus
+		latest.Status.StaleSecretsCount = staleSecretWatch.Status.StaleSecretsCount
+
+		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			return r.Status().Update(ctx, latest)
+		})
+
+		if err != nil {
+			logger.Error(err, "Failed to update StaleSecretWatch status with retry")
+			return true, ctrl.Result{}, err
+		}
 
 		logger.Info("Updated SecretStatus post-status update", "SecretStatus", staleSecretWatch.Status.SecretStatus)
 
-		// statusJson, _ := json.Marshal(staleSecretWatch.Status.SecretStatus)
-		// message := fmt.Sprintf("Daily check completed successfully. \nStatus: %s\nStale Secrets Count: %d", string(statusJson), staleSecretWatch.Status.StaleSecretsCount)
-		fmt.Printf("=====before NotifySlack======\n%+v\n", staleSecretWatch.Status.SecretStatus)
-		if len(staleSecretWatch.Status.SecretStatus) > 0 {
-			if err := r.NotifySlack(ctx, logger, staleSecretWatch); err != nil {
-				logger.Error(err, "Failed to notify Slack")
-				return true, ctrl.Result{}, err
-			}
-		} else {
-			logger.Info("No Stale Secrets found. Enjoy.")
-		}
-
-		// requeueAfter := GetNextNineAMUTC()
-		requeueAfter := GetNextFiveMinutes()
+		// Schedule the next check for the following day at the same time
+		nextCheck := time.Now().Add(24 * time.Hour)
+		requeueAfter := time.Until(nextCheck)
 		logger.Info("Daily check performed, requeue scheduled", "RequeueAfter", requeueAfter)
 		return true, ctrl.Result{RequeueAfter: requeueAfter}, nil
-	} else {
+
+		// requeueAfter := GetNextNineAMUTC()
+		// requeueAfter := GetNextFiveMinutes()
+		// logger.Info("Daily check performed, requeue scheduled", "RequeueAfter", requeueAfter)
+		// return true, ctrl.Result{RequeueAfter: requeueAfter}, nil
+	} else if currentTime.Weekday() == 0 || currentTime.Weekday() == 6 {
 		logger.Info("It's the weekend. PerformDailyCheck will run over the coming weekdays.")
+	} else {
+		logger.Info("This is outside the notified time. PerformanceDailyCheck will run on the next schedule.")
 	}
 
+	logger.Info("It is not time for daily checks yet, skipping...")
 	// Indicate no requeue needed for daily checks, continue with other tasks
-	return false, ctrl.Result{}, nil
+	return false, ctrl.Result{RequeueAfter: time.Until(time.Date(currentTime.Year(), currentTime.Month(), currentTime.Day(), 9, 0, 0, 0, time.UTC))}, nil
+	//return false, ctrl.Result{}, nil
 }

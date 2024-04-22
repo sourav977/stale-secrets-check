@@ -11,6 +11,16 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: system
 ---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: slack-bot-secret
+  namespace: system
+type: Opaque
+data:
+  SLACK_BOT_TOKEN: base64-encoded-token-here
+  SLACK_CHANNEL_ID: base64-encoded-channel-id-here
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -73,6 +83,17 @@ spec:
         image: controller:latest
         imagePullPolicy: "IfNotPresent"
         name: manager
+        env:
+          - name: SLACK_BOT_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: slack-bot-secret
+                key: SLACK_BOT_TOKEN
+          - name: SLACK_CHANNEL_ID
+            valueFrom:
+              secretKeyRef:
+                name: slack-bot-secret
+                key: SLACK_CHANNEL_ID   
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:

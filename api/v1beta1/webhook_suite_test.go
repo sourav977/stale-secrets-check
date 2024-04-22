@@ -188,3 +188,106 @@ var _ = Describe("StaleSecretWatch Webhook", func() {
 		})
 	})
 })
+
+var _ = Describe("StaleSecretWatch Webhook Validation 01", func() {
+	var staleSecretWatch *StaleSecretWatch
+
+	BeforeEach(func() {
+		staleSecretWatch = &StaleSecretWatch{
+			Spec: StaleSecretWatchSpec{
+				StaleThresholdInDays: 1,
+				RefreshInterval:      nil, // not setting this to test default behavior
+				StaleSecretToWatch: StaleSecretToWatch{
+					Namespace: "", // intentionally left blank to test validation logic
+					ExcludeList: []ExcludeList{
+						{
+							SecretName: "",
+							Namespace:  "test,namespace",
+						},
+					},
+				},
+			},
+		}
+	})
+
+	Describe("Refresh Interval Defaulting", func() {
+		It("should set a default refresh interval if none is provided", func() {
+			_ = staleSecretWatch.ValidateStaleSecretWatch()
+			Expect(staleSecretWatch.Spec.RefreshInterval.Duration).To(Equal(time.Hour))
+		})
+	})
+
+	Describe("Namespace Validations", func() {
+		Context("when the namespace is empty and not 'all'", func() {
+			It("should return an error indicating the namespace cannot be empty", func() {
+				err := staleSecretWatch.ValidateStaleSecretWatch()
+				Expect(err).To(MatchError("staleSecretToWatch.namespace cannot be empty, please specify 'all' to watch all namespace or existing namespace name"))
+			})
+		})
+	})
+})
+
+var _ = Describe("StaleSecretWatch Webhook Validation 02", func() {
+	var staleSecretWatch *StaleSecretWatch
+
+	BeforeEach(func() {
+		staleSecretWatch = &StaleSecretWatch{
+			Spec: StaleSecretWatchSpec{
+				StaleThresholdInDays: 1,
+				RefreshInterval:      nil, // not setting this to test default behavior
+				StaleSecretToWatch: StaleSecretToWatch{
+					Namespace: "default",
+					ExcludeList: []ExcludeList{
+						{
+							SecretName: "valid-secret-name", // Set valid name to bypass secret name validation
+							Namespace:  "test,namespace",    // Set invalid namespace to test invalid character validation
+						},
+					},
+				},
+			},
+		}
+	})
+
+	Describe("Exclude List Entry Validations", func() {
+		Context("when an exclude list entry has an empty secret name", func() {
+			BeforeEach(func() {
+				// Overriding ExcludeList to generate error for this specific test
+				staleSecretWatch.Spec.StaleSecretToWatch.ExcludeList[0].SecretName = ""
+			})
+			It("should return an error for empty secret name", func() {
+				err := staleSecretWatch.ValidateStaleSecretWatch()
+				Expect(err).To(MatchError("excludeList.secretName cannot be empty"))
+			})
+		})
+
+		Context("when an exclude list entry has a namespace with invalid characters", func() {
+			It("should return an error for invalid characters in namespace", func() {
+				err := staleSecretWatch.ValidateStaleSecretWatch()
+				Expect(err).To(MatchError(ContainSubstring("invalid characters in namespace name")))
+			})
+		})
+	})
+
+	Describe("Stale Threshold Validations", func() {
+		Context("exclude.Namespace must be a single/existing namespace name", func() {
+			It("should return an error stating it must be a positive integer", func() {
+				err := staleSecretWatch.ValidateStaleSecretWatch()
+				Expect(err).To(MatchError("invalid characters in namespace name: test,namespace, exclude.Namespace must be a single/existing namespace name"))
+			})
+		})
+	})
+
+	Describe("Stale Threshold Validations", func() {
+		Context("when staleThresholdInDays is non-positive", func() {
+			BeforeEach(func() {
+				staleSecretWatch.Spec.StaleSecretToWatch.ExcludeList[0].Namespace = "test"
+				staleSecretWatch.Spec.StaleThresholdInDays = 0 // Set to zero to test non-positive validation
+			})
+			It("should return an error stating it must be a positive integer", func() {
+				err := staleSecretWatch.ValidateStaleSecretWatch()
+				Expect(err).To(MatchError("staleThresholdInDays must be a positive integer"))
+			})
+		})
+	})
+
+})
