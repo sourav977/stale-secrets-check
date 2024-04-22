@@ -1,0 +1,14 @@
+apiVersion: security.stalesecretwatch.io/v1beta1
+kind: StaleSecretWatch
+metadata:
+  labels:
+    app.kubernetes.io/name: stalesecretwatch
+  name: stalesecretwatch-sample
+spec:
+  staleThresholdInDays: 20
+  refreshInterval: 24h
+  staleSecretToWatch:
+    namespace: all
+    excludeList:
+    - namespace: kube-system
+      secretName: sh.helm.release.v1.traefik-crd.v1, sh.helm.release.v1.traefik.v1 
