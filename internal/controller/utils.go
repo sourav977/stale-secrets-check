@@ -28,21 +28,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// func RetrieveModifiedTime(om metav1.ObjectMeta) string {
-// 	// Iterate over managedFields to find the element where "manager" contains "edit"
-// 	for _, field := range om.ManagedFields {
-// 		if strings.Contains(field.Manager, "edit") {
-// 			// Assuming Time is of type metav1.Time and you want to format it
-// 			if field.Time != nil {
-// 				return field.Time.UTC().Format(time.RFC3339)
-// 			}
-// 			break
-// 		}
-// 	}
-// 	// If no "edit" action found, return the creation timestamp
-// 	return om.CreationTimestamp.UTC().Format(time.RFC3339)
-// }
-
 func RetrieveModifiedTime(om metav1.ObjectMeta) string {
 	if len(om.ManagedFields) > 0 {
 		return om.ManagedFields[len(om.ManagedFields)-1].Time.UTC().Format(time.RFC3339)
@@ -118,5 +103,5 @@ func ParseTime(timeStr string) (time.Time, error) {
 func GetNextFiveMinutes() time.Duration {
 	now := time.Now().UTC()
 	nextFiveMinuteMark := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), (now.Minute()/5+1)*5, 0, 0, time.UTC)
-	return nextFiveMinuteMark.Sub(now)
+	return nextFiveMinuteMark.Sub(now).Abs()
 }
