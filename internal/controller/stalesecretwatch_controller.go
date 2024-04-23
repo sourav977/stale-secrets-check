@@ -187,8 +187,8 @@ func (r *StaleSecretWatchReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return result, nil
 	}
 
-	logger.Info("Regular reconciliation complete, requeue after 2 minutes")
-	return ctrl.Result{RequeueAfter: 2 * time.Minute}, nil
+	logger.Info("Regular reconciliation complete, requeue after 10 minutes")
+	return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
 }
 
 // removeFinalizer handles deletion and finalizers
@@ -494,7 +494,7 @@ func (r *StaleSecretWatchReconciler) getSecret(ctx context.Context, namespace, n
 	secret := &corev1.Secret{}
 	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, secret)
 	if err != nil {
-		return nil, err
+		return secret, err
 	}
 	return secret, nil
 }
