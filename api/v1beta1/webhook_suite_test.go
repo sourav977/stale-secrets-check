@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
@@ -64,7 +65,9 @@ var _ = BeforeSuite(func() {
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: false,
 		WebhookInstallOptions: envtest.WebhookInstallOptions{
-			Paths: []string{filepath.Join("..", "..", "config", "webhook")},
+			Paths:            []string{filepath.Join("..", "..", "config", "webhook")},
+			LocalServingPort: 9443,
+			LocalServingHost: "127.0.0.1",
 		},
 	}
 
@@ -90,12 +93,11 @@ var _ = BeforeSuite(func() {
 	// start webhook server using Manager
 	webhookInstallOptions := &testEnv.WebhookInstallOptions
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
-		Scheme:             scheme,
-		Host:               webhookInstallOptions.LocalServingHost,
-		Port:               webhookInstallOptions.LocalServingPort,
-		CertDir:            webhookInstallOptions.LocalServingCertDir,
-		LeaderElection:     false,
-		MetricsBindAddress: "0",
+		Scheme: scheme,
+		Metrics: server.Options{
+			BindAddress: ":8080",
+		},
+		LeaderElection: false,
 	})
 	Expect(err).NotTo(HaveOccurred())
 
@@ -120,7 +122,7 @@ var _ = BeforeSuite(func() {
 		}
 		conn.Close()
 		return nil
-	}).Should(Succeed())
+	}, 10*time.Second, 1*time.Second).Should(Succeed())
 
 })
 

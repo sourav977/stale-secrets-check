@@ -150,7 +150,7 @@ func Test_prepareSlackMessage(t *testing.T) {
 					},
 					generateWarningBlock("High alert! Check these secrets."),
 					{
-						Type: "rich_text_preformatted",
+						Type: "rich_text",
 						Elements: []Element{
 							{
 								Type:   "rich_text_preformatted",
