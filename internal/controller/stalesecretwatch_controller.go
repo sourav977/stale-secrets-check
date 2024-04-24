@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -38,6 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	securityv1beta1 "github.com/sourav977/stale-secrets-watch/api/v1beta1"
 )
@@ -257,10 +259,28 @@ func (r *StaleSecretWatchReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// update events by *reconciling the object*.
 	// This is the equivalent of calling
 	// Watches(&source.Kind{Type: apiType}, &handler.EnqueueRequestForObject{}).
+	mapFunc := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, a client.Object) []reconcile.Request {
+		var requests []reconcile.Request
+		list := &securityv1beta1.StaleSecretWatchList{}
+		if err := mgr.GetClient().List(context.Background(), list); err != nil {
+			log.Log.Error(err, "Failed to list StaleSecretWatch for reconciling Secret changes")
+			return nil
+		}
+		for _, item := range list.Items {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      item.Name,
+					Namespace: item.Namespace,
+				},
+			})
+		}
+		return requests
+	})
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&securityv1beta1.StaleSecretWatch{}).
 		Owns(&corev1.ConfigMap{}, builder.OnlyMetadata).
-		Watches(&corev1.Secret{}, &handler.EnqueueRequestForObject{}).
+		Watches(&corev1.Secret{}, mapFunc).
 		Complete(r)
 }
 
@@ -316,12 +336,12 @@ func (r *StaleSecretWatchReconciler) updateSecretStatuses(logger logr.Logger, cm
 			if err != nil {
 				return err
 			}
-			logger.Info("Time details",
-				"currentTime", currentTime,
-				"lastModifiedTime", lastModifiedTime,
-				"timeSinceLastModified", currentTime.Sub(lastModifiedTime),
-				"staleThreshold", staleThreshold,
-				"conditionResult", currentTime.Sub(lastModifiedTime) > staleThreshold)
+			// logger.Info("Time details",
+			// 	"currentTime", currentTime,
+			// 	"lastModifiedTime", lastModifiedTime,
+			// 	"timeSinceLastModified", currentTime.Sub(lastModifiedTime),
+			// 	"staleThreshold", staleThreshold,
+			// 	"conditionResult", currentTime.Sub(lastModifiedTime) > staleThreshold)
 			if currentTime.Sub(lastModifiedTime).Abs() > staleThreshold.Abs() {
 				secretStatus := securityv1beta1.SecretStatus{
 					Namespace:    namespace.Name,
@@ -580,7 +600,7 @@ func (r *StaleSecretWatchReconciler) performDailyChecks(ctx context.Context, log
 
 	//if currentTime.Hour() == 9 && currentTime.Minute() < 30 { // Checking within a 30-minute window after 9 AM
 	//if currentTime.Weekday() > 0 && currentTime.Weekday() < 6 {
-	if currentTime.Hour() <= 8 {
+	if currentTime.Hour() >= 10 && currentTime.Hour() <= 20 {
 		staleSecretWatch.Status.SecretStatus = []securityv1beta1.SecretStatus{}
 		staleSecretWatch.Status.StaleSecretsCount = 0
 		cm := &corev1.ConfigMap{}
@@ -596,6 +616,9 @@ func (r *StaleSecretWatchReconciler) performDailyChecks(ctx context.Context, log
 
 		if err := r.NotifySlack(ctx, logger, staleSecretWatch); err != nil {
 			logger.Error(err, "Failed to notify Slack")
+			if err == errors.New("SLACK_BOT_TOKEN or SLACK_CHANNEL_ID is not set") {
+				return false, ctrl.Result{Requeue: false}, nil
+			}
 			return true, ctrl.Result{}, err
 		}
 
@@ -619,7 +642,7 @@ func (r *StaleSecretWatchReconciler) performDailyChecks(ctx context.Context, log
 			return true, ctrl.Result{}, err
 		}
 
-		logger.Info("Updated SecretStatus post-status update", "SecretStatus", staleSecretWatch.Status.SecretStatus)
+		//logger.Info("Updated SecretStatus post-status update", "SecretStatus", staleSecretWatch.Status.SecretStatus)
 
 		// Schedule the next check for the following day at the same time
 		nextCheck := time.Now().Add(24 * time.Hour)

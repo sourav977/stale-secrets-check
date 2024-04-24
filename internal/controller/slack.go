@@ -60,6 +60,11 @@ type Markup struct {
 	Style *Style `json:"style,omitempty"`
 }
 
+const (
+	RT  = "rich_text"
+	RTF = "rich_text_preformatted"
+)
+
 type Style struct {
 	Bold bool `json:"bold,omitempty"`
 }
@@ -87,10 +92,10 @@ func (r *StaleSecretWatchReconciler) NotifySlack(ctx context.Context, logger log
 			logger.Error(err, "Failed to encode ConfigData to JSON")
 			return err
 		}
-		logger.Info("This Info will send to Slack", "payload", string(payloadBytes))
+		logger.Info("This Info will send to Slack: ", "payload", string(payloadBytes))
 		return sendSlackNotification(ctx, logger, payload, token)
 	} else {
-		successText := "All secrets are up to date. Good work!"
+		successText := "All secrets are up to date. Good work!\t"
 		payload := prepareSlackMessage("success", successText, channelID, nil)
 		logger.Info(successText)
 		return sendSlackNotification(ctx, logger, payload, token)
@@ -112,17 +117,19 @@ func prepareSlackMessage(msgType, text, channelID string, statuses []securityv1b
 		Type: "divider",
 	})
 
-	if msgType == "warning" {
+	if msgType != "warning" {
+		blocks = append(blocks, generateSuccessBlock(text))
+	} else {
 		blocks = append(blocks, generateWarningBlock(text))
 		// Add secret details if present
 		for _, status := range statuses {
 			info := fmt.Sprintf("\"secret_name\": \"%s\",\n\"namespace\": \"%s\",\n\"type\": \"%s\",\n\"created\": \"%s\",\n\"last_modified\": \"%s\"",
 				status.Name, status.Namespace, status.SecretType, status.Created.Format("2006-01-02T15:04:05Z"), status.LastModified.Format("2006-01-02T15:04:05Z"))
 			blocks = append(blocks, Block{
-				Type: "rich_text_preformatted",
+				Type: RT,
 				Elements: []Element{
 					{
-						Type:   "rich_text_preformatted",
+						Type:   RTF,
 						Border: 1,
 						Elements: []Markup{
 							{
@@ -134,8 +141,6 @@ func prepareSlackMessage(msgType, text, channelID string, statuses []securityv1b
 				},
 			})
 		}
-	} else {
-		blocks = append(blocks, generateSuccessBlock(text))
 	}
 
 	// Final divider
@@ -194,13 +199,13 @@ func generateSuccessBlock(text string) Block {
 				Type: "rich_text_section",
 				Elements: []Markup{
 					{
-						Type: "emoji",
-						Name: "smiley",
-					},
-					{
 						Type:  "text",
 						Text:  text,
 						Style: &Style{Bold: true},
+					},
+					{
+						Type: "emoji",
+						Name: "smiley",
 					},
 				},
 			},
