@@ -115,7 +115,7 @@ Sample Slack Notifications
 <details>
 <summary>Warning Message</summary>
 
-![warning_msg](/images/warning_msg.png)
+![warning_msg](/images/warning_msg1.png)
 
 </details>
 
@@ -123,7 +123,7 @@ Sample Slack Notifications
 <details>
 <summary>Normal Message</summary>
 
-![normal_msg](/images/normal_msg.png)
+![normal_msg](/images/normal_msg1.png)
 
 </details>
 <br>

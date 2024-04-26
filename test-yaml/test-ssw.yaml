@@ -5,7 +5,7 @@ metadata:
     app.kubernetes.io/name: stalesecretwatch
   name: stalesecretwatch-sample
 spec:
-  staleThresholdInDays: 10
+  staleThresholdInDays: 50
   refreshInterval: 24h
   staleSecretToWatch:
     namespace: all
