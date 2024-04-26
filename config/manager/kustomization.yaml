@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: stalesecretwatch.io/stale-secrets-watch-controller
-  newTag: 0.0.1
+  newTag: 1.0.0
