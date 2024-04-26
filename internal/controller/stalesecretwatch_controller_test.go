@@ -1232,3 +1232,75 @@ func TestStaleSecretWatchReconciler_Reconcile(t *testing.T) {
 		})
 	}
 }
+
+func TestStaleSecretWatchReconciler_updateLastCheckedAnnotation(t *testing.T) {
+	sch := runtime.NewScheme()
+	_ = securityv1beta1.AddToScheme(sch)
+	staleSecretWatch := &securityv1beta1.StaleSecretWatch{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+		}, Status: securityv1beta1.StaleSecretWatchStatus{
+			SecretStatus: []securityv1beta1.SecretStatus{
+				{
+					Name:         "my-secret",
+					Namespace:    "vivid",
+					SecretType:   "Opaque",
+					Created:      metav1.Now(),
+					LastModified: metav1.Now(),
+					IsStale:      true,
+					Message:      "secret is stale",
+				},
+			},
+			StaleSecretsCount: 1,
+		},
+	}
+	fclient := fake.NewClientBuilder().WithScheme(sch).WithObjects(staleSecretWatch).Build()
+	type fields struct {
+		Client          client.Client
+		Log             logr.Logger
+		RequeueInterval time.Duration
+		Scheme          *runtime.Scheme
+		Recorder        record.EventRecorder
+	}
+	type args struct {
+		ctx context.Context
+		ssw *securityv1beta1.StaleSecretWatch
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "valid data",
+			fields: fields{
+				Client:          fclient,
+				Log:             logr.Discard(),
+				RequeueInterval: time.Second * 10,
+				Scheme:          sch,
+				Recorder:        record.NewFakeRecorder(10),
+			},
+			args: args{
+				ctx: context.TODO(),
+				ssw: staleSecretWatch,
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &StaleSecretWatchReconciler{
+				Client:          tt.fields.Client,
+				Log:             tt.fields.Log,
+				RequeueInterval: tt.fields.RequeueInterval,
+				Scheme:          tt.fields.Scheme,
+				Recorder:        tt.fields.Recorder,
+			}
+			if err := r.updateLastCheckedAnnotation(tt.args.ctx, tt.args.ssw); (err != nil) != tt.wantErr {
+				t.Errorf("StaleSecretWatchReconciler.updateLastCheckedAnnotation() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
