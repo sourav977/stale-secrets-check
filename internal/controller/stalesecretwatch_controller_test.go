@@ -554,11 +554,12 @@ func TestStaleSecretWatchReconciler_prepareWatchList(t *testing.T) {
 	ns1 := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns1"}}
 	ns2 := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns2"}}
 	secret1 := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "secret1", Namespace: "ns1"}}
-	secret2 := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "secret2", Namespace: "ns1"}}
+	secret2 := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "secret2", Namespace: "ns1"}, Type: "bootstrap.kubernetes.io/token"}
 	secret3 := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "secret3", Namespace: "ns2"}}
+	secret4 := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "secret4", Namespace: "ns2"}, Type: "kubernetes.io/service-account-token"}
 
 	// Create a fake client with the above objects
-	fclient := fake.NewClientBuilder().WithScheme(sch).WithObjects(ns1, ns2, secret1, secret2, secret3).Build()
+	fclient := fake.NewClientBuilder().WithScheme(sch).WithObjects(ns1, ns2, secret1, secret2, secret3, secret4).Build()
 
 	// Define args for the tests
 	sswAllNamespaces := &securityv1beta1.StaleSecretWatch{
@@ -571,10 +572,17 @@ func TestStaleSecretWatchReconciler_prepareWatchList(t *testing.T) {
 			},
 		},
 	}
-	sswSpecificNamespace := &securityv1beta1.StaleSecretWatch{
+	sswSpecificNamespace1 := &securityv1beta1.StaleSecretWatch{
 		Spec: securityv1beta1.StaleSecretWatchSpec{
 			StaleSecretToWatch: securityv1beta1.StaleSecretToWatch{
 				Namespace: "ns1",
+			},
+		},
+	}
+	sswSpecificNamespace2 := &securityv1beta1.StaleSecretWatch{
+		Spec: securityv1beta1.StaleSecretWatchSpec{
+			StaleSecretToWatch: securityv1beta1.StaleSecretToWatch{
+				Namespace: "ns1,ns2",
 			},
 		},
 	}
@@ -593,8 +601,8 @@ func TestStaleSecretWatchReconciler_prepareWatchList(t *testing.T) {
 			logger: logger,
 			ssw:    sswAllNamespaces,
 			want: map[string][]string{
-				"ns1": {"secret1"},
-				"ns2": {"secret3"},
+				"ns1": {"secret1"}, // "secret2" is excluded by type
+				"ns2": {"secret3"}, // "secret4" is excluded by type
 			},
 			wantErr: false,
 		},
@@ -602,9 +610,20 @@ func TestStaleSecretWatchReconciler_prepareWatchList(t *testing.T) {
 			name:   "Specific namespace without exclusion",
 			client: fclient,
 			logger: logger,
-			ssw:    sswSpecificNamespace,
+			ssw:    sswSpecificNamespace1,
 			want: map[string][]string{
-				"ns1": {"secret1", "secret2"},
+				"ns1": {"secret1"},
+			},
+			wantErr: false,
+		},
+		{
+			name:   "Specific namespace without exclusion",
+			client: fclient,
+			logger: logger,
+			ssw:    sswSpecificNamespace2,
+			want: map[string][]string{
+				"ns1": {"secret1"},
+				"ns2": {"secret3"},
 			},
 			wantErr: false,
 		},

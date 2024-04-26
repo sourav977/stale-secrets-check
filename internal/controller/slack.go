@@ -83,23 +83,23 @@ func (r *StaleSecretWatchReconciler) NotifySlack(ctx context.Context, logger log
 	}
 
 	clusterName := GetClusterName()
-	if len(staleSecretWatch.Status.SecretStatus) > 0 {
-		warningText := fmt.Sprintf("Below is a list of secret resources where secret data has not been modified for StaleThresholdInDays %d days in %s Cluster!! \n Total %d number of stale secrets found.\n", staleSecretWatch.Spec.StaleThresholdInDays, clusterName, staleSecretWatch.Status.StaleSecretsCount)
-		payload := prepareSlackMessage("warning", warningText, channelID, staleSecretWatch.Status.SecretStatus)
-		// Marshal the complete payload
-		payloadBytes, err := json.Marshal(payload)
-		if err != nil {
-			logger.Error(err, "Failed to encode ConfigData to JSON")
-			return err
-		}
-		logger.Info("This Info will send to Slack: ", "payload", string(payloadBytes))
-		return sendSlackNotification(ctx, logger, payload, token)
-	} else {
+	if len(staleSecretWatch.Status.SecretStatus) <= 0 {
 		successText := "All secrets are up to date. Good work!\t"
 		payload := prepareSlackMessage("success", successText, channelID, nil)
 		logger.Info(successText)
 		return sendSlackNotification(ctx, logger, payload, token)
 	}
+
+	warningText := fmt.Sprintf("Below is a list of secret resources where secret data has not been modified for StaleThresholdInDays %d days in %s Cluster!! \n Total %d number of stale secrets found.\n", staleSecretWatch.Spec.StaleThresholdInDays, clusterName, staleSecretWatch.Status.StaleSecretsCount)
+	payload := prepareSlackMessage("warning", warningText, channelID, staleSecretWatch.Status.SecretStatus)
+	// Marshal the complete payload
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		logger.Error(err, "Failed to encode ConfigData to JSON")
+		return err
+	}
+	logger.Info("This Info will send to Slack: ", "payload", string(payloadBytes))
+	return sendSlackNotification(ctx, logger, payload, token)
 }
 
 // prepareSlackMessage prepares slack msg
