@@ -2,8 +2,6 @@ module github.com/sourav977/stale-secrets-watch
 
 go 1.21
 
-toolchain go1.21.9
-
 require (
 	github.com/go-logr/logr v1.4.1
 	github.com/onsi/ginkgo/v2 v2.14.0
