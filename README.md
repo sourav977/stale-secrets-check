@@ -23,7 +23,7 @@ Once you have Slack Channel ID and Bot User OAuth Token, update them in `config/
 
 ### Method 1: Local Execution using Make
 
-1. **Install Cert-Manager**
+#### 1. Install Cert-Manager
 
 Cert-manager is required to run StaleSecretWatch locally:
 ```
@@ -33,7 +33,7 @@ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/
 Wait for 5-10 minutes until cert-manager is fully operational and the API reports readiness. 
 `The cert-manager API is ready`.
 
-2. **Setup Certificates**
+#### 2. Setup Certificates
 
 Create the necessary directories and populate them with the required certificate files:
 In my case when I run locally using `make run` , it complains that certs are not present in below path. So I have created accordingly. In your case, run `make run` first without installing above cert-manager to get the path.
@@ -48,13 +48,13 @@ kubectl get secret cert-manager-webhook-ca -n cert-manager  -o jsonpath='{.data.
 kubectl get secret cert-manager-webhook-ca -n cert-manager  -o jsonpath='{.data.tls\.key}' | base64 -d > /var/folders/1g/rxrzb8ss4kbfgjh5zdd9w_cm0000gn/T/k8s-webhook-server/serving-certs/tls.key
 ```
 
-3. **Remove Cert-Manager**
+#### 3. Remove Cert-Manager
 
 ```
 kubectl delete -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.4/cert-manager.yaml
 ```
 
-4. **Run the Operator Locally**
+#### 4. Run the Operator Locally
 
 ```
 export SLACK_BOT_TOKEN=<slack bot token>
@@ -66,7 +66,7 @@ make run
 
 This will start the operator and wait for StaleSecretWatch resources to be created. The controller will run and wait for and any `StaleSecretWatch` resource to get create.
 
-5. **Deploy a `StaleSecretWatch` Resource**
+#### 5. Deploy a `StaleSecretWatch` Resource
 
 In a new terminal, deploy a sample StaleSecretWatch resource. You can find the Sample yaml files in test-yaml directory. Run any yaml.
 example:
@@ -74,7 +74,7 @@ example:
 kubectl create -f test-yaml/test-ssw.yaml
 ```
 
-6. **Helpful Commands**
+#### 6. Helpful Commands
 
 Monitor the resources and view logs with:
 
@@ -86,7 +86,7 @@ kubectl events --for ssw/StaleSecretWatch-sample --watch
 kubectl get ssw StaleSecretWatch-sample -o jsonpath="{.status.conditions}" --watch 
 ```
 
-7. **View the Generated ConfigMap**
+#### 7. View the Generated ConfigMap
 
 Based on the secrets and namespace mentioned in the yaml file, `StaleSecretWatch` resource will create a configmap resource named `hashed-secrets-stalesecretwatch` in `default` namespace which will contain the hash of secret data. To see the data stored by StaleSecretWatch in a ConfigMap:
 
@@ -94,7 +94,7 @@ Based on the secrets and namespace mentioned in the yaml file, `StaleSecretWatch
 kubectl get cm hashed-secrets-stalesecretwatch -o jsonpath='{.binaryData.data}' | base64 -d | jq .
 ```
 
-8. **Watch changes**
+#### 8. Watch changes
 
 Now update any secret resource's data section from the watchlist you have provided in yaml file, save it, now check again the `hashed-secrets-stalesecretwatch` data
 
@@ -108,7 +108,7 @@ kubectl get secret chef-user-secret -n vivid -o jsonpath='{@}' | jq .
 kubectl get cm hashed-secrets-stalesecretwatch -o jsonpath='{.binaryData.data}' | base64 -d | jq .
 ```
 
-9. **Slack Notification**
+#### 9. Slack Notification
 
 Sample Slack Notifications
 
@@ -128,7 +128,7 @@ Sample Slack Notifications
 </details>
 <br>
 
-10. **Deletion**
+#### 10. Deletion
 
 To delete a `StaleSecretWatch` resource and its associated configurations:
 
@@ -138,13 +138,26 @@ Run
 kubectl delete -f test-yaml/test-ssw.yaml
 ```
 
-11. **Remove crds**
+#### 11. Remove crds
 
 Run
 
 ```
 make crds.uninstall
 ```
+
+#### 12. Collect Profiling Data
+
+[`pprof`](https://github.com/google/pprof/blob/main/doc/README.md) is a tool can be used for visualization and analysis of profiling data. `pprof` reads a collection of profiling samples in `profile.proto` format and generates reports to visualize and help analyze the data.
+
+Now you can access the profiling data through the browser or command line.
+Run appliaction locally by `make run`, then run below command in different terminal from parent directory:
+
+```
+go tool pprof -http=:8082 http://localhost:6061/debug/pprof/heap
+```
+
+
 
 ### Method 2: Run in a Kubernetes Cluster
 
@@ -156,4 +169,4 @@ Run
 ./run_locally.sh
 ```
 
-Follow Steps 5 onwards from **Method1**
+Follow Steps 5 onwards from Method1
